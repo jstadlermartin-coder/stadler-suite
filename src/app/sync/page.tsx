@@ -1,28 +1,182 @@
 'use client';
 
-import { useState } from 'react';
-import { RefreshCw, Check, X, Clock, AlertTriangle, Database, Server, Wifi, WifiOff } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { RefreshCw, Check, X, Clock, AlertTriangle, Database, Wifi, WifiOff, Download } from 'lucide-react';
+import { bridgeAPI, BridgeStats } from '@/lib/bridge';
 
 interface SyncStatus {
-  rooms: { status: 'synced' | 'error' | 'pending'; lastSync: string; count: number };
-  guests: { status: 'synced' | 'error' | 'pending'; lastSync: string; count: number };
-  bookings: { status: 'synced' | 'error' | 'pending'; lastSync: string; count: number };
-  availability: { status: 'synced' | 'error' | 'pending'; lastSync: string; count: number };
+  rooms: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
+  guests: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
+  bookings: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
+  availability: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
 }
-
-const initialSyncStatus: SyncStatus = {
-  rooms: { status: 'synced', lastSync: '2024-12-17T10:30:00', count: 66 },
-  guests: { status: 'synced', lastSync: '2024-12-17T10:30:00', count: 26615 },
-  bookings: { status: 'synced', lastSync: '2024-12-17T10:30:00', count: 23566 },
-  availability: { status: 'synced', lastSync: '2024-12-17T10:35:00', count: 2640 },
-};
 
 export default function SyncPage() {
   const [bridgeStatus, setBridgeStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>(initialSyncStatus);
+  const [bridgeStats, setBridgeStats] = useState<BridgeStats | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
+    rooms: { status: 'idle', lastSync: null, count: 0 },
+    guests: { status: 'idle', lastSync: null, count: 0 },
+    bookings: { status: 'idle', lastSync: null, count: 0 },
+    availability: { status: 'idle', lastSync: null, count: 0 },
+  });
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncLog, setSyncLog] = useState<string[]>([]);
 
-  const formatDateTime = (dateStr: string) => {
+  const addLog = (message: string) => {
+    setSyncLog(prev => [...prev, `${new Date().toLocaleTimeString('de-DE')}: ${message}`]);
+  };
+
+  const checkBridgeConnection = async () => {
+    setBridgeStatus('checking');
+    addLog('Prüfe Verbindung zur Bridge...');
+
+    try {
+      const isConnected = await bridgeAPI.checkConnection();
+      if (isConnected) {
+        setBridgeStatus('connected');
+        addLog('Bridge verbunden!');
+
+        // Lade Stats
+        const stats = await bridgeAPI.getStats();
+        setBridgeStats(stats);
+        addLog(`Gefunden: ${stats.total_guests} Gäste, ${stats.total_bookings} Buchungen, ${stats.total_rooms} Zimmer`);
+      } else {
+        setBridgeStatus('disconnected');
+        addLog('Bridge nicht erreichbar');
+      }
+    } catch (error) {
+      setBridgeStatus('disconnected');
+      addLog(`Fehler: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`);
+    }
+  };
+
+  useEffect(() => {
+    checkBridgeConnection();
+  }, []);
+
+  const syncRooms = async () => {
+    setSyncStatus(prev => ({ ...prev, rooms: { ...prev.rooms, status: 'syncing' } }));
+    addLog('Synchronisiere Zimmer...');
+
+    try {
+      const rooms = await bridgeAPI.getRooms();
+      const now = new Date().toISOString();
+      setSyncStatus(prev => ({
+        ...prev,
+        rooms: { status: 'synced', lastSync: now, count: rooms.length }
+      }));
+      addLog(`${rooms.length} Zimmer geladen`);
+
+      // Hier würden wir die Daten in Firestore speichern
+      // await saveRoomsToFirestore(rooms);
+
+    } catch (error) {
+      setSyncStatus(prev => ({ ...prev, rooms: { ...prev.rooms, status: 'error' } }));
+      addLog(`Fehler beim Laden der Zimmer: ${error instanceof Error ? error.message : 'Unbekannt'}`);
+    }
+  };
+
+  const syncGuests = async () => {
+    setSyncStatus(prev => ({ ...prev, guests: { ...prev.guests, status: 'syncing' } }));
+    addLog('Synchronisiere Gäste...');
+
+    try {
+      let allGuests: any[] = [];
+      let offset = 0;
+      const limit = 500;
+      let total = 0;
+
+      do {
+        const data = await bridgeAPI.getGuests(limit, offset);
+        allGuests = [...allGuests, ...data.guests];
+        total = data.total;
+        offset += limit;
+        addLog(`${allGuests.length} von ${total} Gästen geladen...`);
+      } while (allGuests.length < total);
+
+      const now = new Date().toISOString();
+      setSyncStatus(prev => ({
+        ...prev,
+        guests: { status: 'synced', lastSync: now, count: allGuests.length }
+      }));
+      addLog(`${allGuests.length} Gäste komplett geladen`);
+
+    } catch (error) {
+      setSyncStatus(prev => ({ ...prev, guests: { ...prev.guests, status: 'error' } }));
+      addLog(`Fehler beim Laden der Gäste: ${error instanceof Error ? error.message : 'Unbekannt'}`);
+    }
+  };
+
+  const syncAvailability = async () => {
+    setSyncStatus(prev => ({ ...prev, availability: { ...prev.availability, status: 'syncing' } }));
+    addLog('Synchronisiere Verfügbarkeit...');
+
+    try {
+      const today = new Date();
+      const endDate = new Date();
+      endDate.setMonth(endDate.getMonth() + 6); // 6 Monate voraus
+
+      const startStr = today.toISOString().split('T')[0];
+      const endStr = endDate.toISOString().split('T')[0];
+
+      const availability = await bridgeAPI.getAvailability(startStr, endStr);
+      const now = new Date().toISOString();
+      setSyncStatus(prev => ({
+        ...prev,
+        availability: { status: 'synced', lastSync: now, count: availability.length }
+      }));
+      addLog(`${availability.length} Verfügbarkeits-Einträge geladen`);
+
+    } catch (error) {
+      setSyncStatus(prev => ({ ...prev, availability: { ...prev.availability, status: 'error' } }));
+      addLog(`Fehler: ${error instanceof Error ? error.message : 'Unbekannt'}`);
+    }
+  };
+
+  const syncCalendar = async () => {
+    setSyncStatus(prev => ({ ...prev, bookings: { ...prev.bookings, status: 'syncing' } }));
+    addLog('Synchronisiere Buchungen...');
+
+    try {
+      const today = new Date();
+      const pastDate = new Date();
+      pastDate.setMonth(pastDate.getMonth() - 1); // 1 Monat zurück
+      const futureDate = new Date();
+      futureDate.setMonth(futureDate.getMonth() + 6); // 6 Monate voraus
+
+      const startStr = pastDate.toISOString().split('T')[0];
+      const endStr = futureDate.toISOString().split('T')[0];
+
+      const bookings = await bridgeAPI.getCalendar(startStr, endStr);
+      const now = new Date().toISOString();
+      setSyncStatus(prev => ({
+        ...prev,
+        bookings: { status: 'synced', lastSync: now, count: bookings.length }
+      }));
+      addLog(`${bookings.length} Buchungen geladen`);
+
+    } catch (error) {
+      setSyncStatus(prev => ({ ...prev, bookings: { ...prev.bookings, status: 'error' } }));
+      addLog(`Fehler: ${error instanceof Error ? error.message : 'Unbekannt'}`);
+    }
+  };
+
+  const syncAll = async () => {
+    setIsSyncing(true);
+    addLog('=== Starte Vollsynchronisation ===');
+
+    await syncRooms();
+    await syncGuests();
+    await syncCalendar();
+    await syncAvailability();
+
+    addLog('=== Synchronisation abgeschlossen ===');
+    setIsSyncing(false);
+  };
+
+  const formatDateTime = (dateStr: string | null) => {
+    if (!dateStr) return '-';
     return new Date(dateStr).toLocaleString('de-DE', {
       day: '2-digit',
       month: '2-digit',
@@ -32,62 +186,18 @@ export default function SyncPage() {
     });
   };
 
-  const checkBridgeConnection = async () => {
-    setBridgeStatus('checking');
-    // Simulate API check
-    setTimeout(() => {
-      setBridgeStatus('connected');
-    }, 1500);
-  };
-
-  const startSync = async (type: keyof SyncStatus | 'all') => {
-    setIsSyncing(true);
-
-    if (type === 'all') {
-      // Sync all
-      for (const key of Object.keys(syncStatus) as (keyof SyncStatus)[]) {
-        setSyncStatus(prev => ({
-          ...prev,
-          [key]: { ...prev[key], status: 'pending' }
-        }));
-      }
-    } else {
-      setSyncStatus(prev => ({
-        ...prev,
-        [type]: { ...prev[type], status: 'pending' }
-      }));
-    }
-
-    // Simulate sync
-    setTimeout(() => {
-      const now = new Date().toISOString();
-      if (type === 'all') {
-        setSyncStatus({
-          rooms: { ...syncStatus.rooms, status: 'synced', lastSync: now },
-          guests: { ...syncStatus.guests, status: 'synced', lastSync: now },
-          bookings: { ...syncStatus.bookings, status: 'synced', lastSync: now },
-          availability: { ...syncStatus.availability, status: 'synced', lastSync: now },
-        });
-      } else {
-        setSyncStatus(prev => ({
-          ...prev,
-          [type]: { ...prev[type], status: 'synced', lastSync: now }
-        }));
-      }
-      setIsSyncing(false);
-    }, 2000);
-  };
-
   const statusIcons = {
+    idle: <Clock className="h-5 w-5 text-slate-400" />,
+    syncing: <RefreshCw className="h-5 w-5 text-amber-500 animate-spin" />,
     synced: <Check className="h-5 w-5 text-green-500" />,
     error: <X className="h-5 w-5 text-red-500" />,
-    pending: <RefreshCw className="h-5 w-5 text-amber-500 animate-spin" />,
   };
 
   const statusLabels = {
+    idle: 'Nicht synchronisiert',
+    syncing: 'Synchronisiert...',
     synced: 'Synchronisiert',
     error: 'Fehler',
-    pending: 'Synchronisiert...',
   };
 
   return (
@@ -96,15 +206,15 @@ export default function SyncPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">CapCorn Sync</h1>
-          <p className="mt-1 text-slate-600">Daten mit CapCorn Bridge synchronisieren</p>
+          <p className="mt-1 text-slate-600">Daten aus CapCorn importieren</p>
         </div>
         <button
-          onClick={() => startSync('all')}
+          onClick={syncAll}
           disabled={isSyncing || bridgeStatus !== 'connected'}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <RefreshCw className={`h-5 w-5 ${isSyncing ? 'animate-spin' : ''}`} />
-          <span>Alles synchronisieren</span>
+          <Download className={`h-5 w-5 ${isSyncing ? 'animate-bounce' : ''}`} />
+          <span>Alles importieren</span>
         </button>
       </div>
 
@@ -140,8 +250,13 @@ export default function SyncPage() {
                 bridgeStatus === 'disconnected' ? 'text-red-700' : 'text-amber-700'
               }`}>
                 {bridgeStatus === 'connected' ? 'Verbunden mit localhost:5000' :
-                 bridgeStatus === 'disconnected' ? 'Keine Verbindung' : 'Verbindung wird geprüft...'}
+                 bridgeStatus === 'disconnected' ? 'Keine Verbindung - Starte die Bridge!' : 'Verbindung wird geprüft...'}
               </p>
+              {bridgeStats && (
+                <p className="text-sm text-green-600 mt-1">
+                  {bridgeStats.total_guests.toLocaleString('de-DE')} Gäste • {bridgeStats.total_bookings.toLocaleString('de-DE')} Buchungen • {bridgeStats.total_rooms} Zimmer
+                </p>
+              )}
             </div>
           </div>
           <button
@@ -154,62 +269,91 @@ export default function SyncPage() {
       </div>
 
       {/* Sync Status Cards */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        {(Object.entries(syncStatus) as [keyof SyncStatus, SyncStatus[keyof SyncStatus]][]).map(([key, data]) => (
-          <div key={key} className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                  <Database className="h-5 w-5 text-slate-600" />
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        {(['rooms', 'guests', 'bookings', 'availability'] as const).map((key) => {
+          const data = syncStatus[key];
+          const labels = {
+            rooms: 'Zimmer',
+            guests: 'Gäste',
+            bookings: 'Buchungen',
+            availability: 'Verfügbarkeit',
+          };
+          const syncFunctions = {
+            rooms: syncRooms,
+            guests: syncGuests,
+            bookings: syncCalendar,
+            availability: syncAvailability,
+          };
+
+          return (
+            <div key={key} className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                    <Database className="h-5 w-5 text-slate-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-900">{labels[key]}</h3>
+                    <p className="text-sm text-slate-500">
+                      {data.count > 0 ? `${data.count.toLocaleString('de-DE')} Einträge` : 'Noch nicht geladen'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-semibold text-slate-900 capitalize">
-                    {key === 'rooms' ? 'Zimmer' :
-                     key === 'guests' ? 'Gäste' :
-                     key === 'bookings' ? 'Buchungen' : 'Verfügbarkeit'}
-                  </h3>
-                  <p className="text-sm text-slate-500">{data.count.toLocaleString('de-DE')} Einträge</p>
+                <div className="flex items-center gap-2">
+                  {statusIcons[data.status]}
+                  <span className={`text-sm ${
+                    data.status === 'synced' ? 'text-green-700' :
+                    data.status === 'error' ? 'text-red-700' :
+                    data.status === 'syncing' ? 'text-amber-700' : 'text-slate-500'
+                  }`}>
+                    {statusLabels[data.status]}
+                  </span>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {statusIcons[data.status]}
-                <span className={`text-sm ${
-                  data.status === 'synced' ? 'text-green-700' :
-                  data.status === 'error' ? 'text-red-700' : 'text-amber-700'
-                }`}>
-                  {statusLabels[data.status]}
-                </span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <Clock className="h-4 w-4" />
+                  {formatDateTime(data.lastSync)}
+                </div>
+                <button
+                  onClick={syncFunctions[key]}
+                  disabled={isSyncing || bridgeStatus !== 'connected'}
+                  className="px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Sync
+                </button>
               </div>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                <Clock className="h-4 w-4" />
-                {formatDateTime(data.lastSync)}
-              </div>
-              <button
-                onClick={() => startSync(key)}
-                disabled={isSyncing || bridgeStatus !== 'connected'}
-                className="px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Sync
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
+      </div>
+
+      {/* Sync Log */}
+      <div className="bg-slate-900 rounded-xl p-4">
+        <h3 className="text-sm font-medium text-slate-400 mb-3">Sync Log</h3>
+        <div className="h-48 overflow-y-auto font-mono text-sm">
+          {syncLog.length === 0 ? (
+            <p className="text-slate-500">Warte auf Sync-Aktionen...</p>
+          ) : (
+            syncLog.map((log, idx) => (
+              <p key={idx} className="text-green-400">{log}</p>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Info Box */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mt-6">
         <div className="flex items-start gap-4">
           <AlertTriangle className="h-6 w-6 text-amber-600 flex-shrink-0" />
           <div>
-            <h3 className="font-semibold text-amber-900 mb-2">Hinweis zur Synchronisation</h3>
-            <ul className="list-disc list-inside space-y-1 text-amber-800 text-sm">
-              <li>Die CapCorn Bridge muss auf dem Hotel-PC laufen (localhost:5000)</li>
-              <li>Bei der ersten Synchronisation werden alle Gäste importiert und nach Email/Telefon dedupliziert</li>
-              <li>Danach werden nur noch Verfügbarkeiten aus CapCorn geladen</li>
-              <li>Alle neuen Buchungen und Preise werden in Stadler Suite verwaltet</li>
-            </ul>
+            <h3 className="font-semibold text-amber-900 mb-2">So startest du die Bridge</h3>
+            <ol className="list-decimal list-inside space-y-1 text-amber-800 text-sm">
+              <li>Öffne den Ordner <code className="bg-amber-100 px-1 rounded">C:\Users\Info\CapCorn-Bridge</code></li>
+              <li>Doppelklick auf <code className="bg-amber-100 px-1 rounded">start.bat</code></li>
+              <li>Warte bis "Running on http://0.0.0.0:5000" erscheint</li>
+              <li>Klicke hier auf "Verbindung prüfen"</li>
+            </ol>
           </div>
         </div>
       </div>
