@@ -33,12 +33,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthorized = user?.email === ALLOWED_EMAIL;
 
   useEffect(() => {
+    let isSubscribed = true;
+
+    // Timeout nach 10 Sekunden falls Firebase nicht antwortet
+    const timeout = setTimeout(() => {
+      if (isSubscribed) {
+        setLoading(false);
+        setError('Verbindung zu Firebase fehlgeschlagen. Bitte Seite neu laden.');
+      }
+    }, 10000);
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      clearTimeout(timeout);
       setUser(user);
       setLoading(false);
+    }, (err) => {
+      clearTimeout(timeout);
+      console.error('Auth state error:', err);
+      setLoading(false);
+      setError('Firebase Auth Fehler: ' + err.message);
     });
 
-    return () => unsubscribe();
+    return () => {
+      isSubscribed = false;
+      clearTimeout(timeout);
+      unsubscribe();
+    };
   }, []);
 
   const signInWithGoogle = async () => {
