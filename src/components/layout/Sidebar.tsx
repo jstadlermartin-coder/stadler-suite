@@ -14,8 +14,10 @@ import {
   Euro,
   Home,
   MessageSquare,
-  RefreshCw
+  RefreshCw,
+  LogOut
 } from 'lucide-react';
+import { useAuth } from '@/lib/auth';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
@@ -34,6 +36,7 @@ const navigation = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
 
   return (
     <div className="flex h-screen w-64 flex-col bg-slate-900">
@@ -45,7 +48,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-2 py-4">
+      <nav className="flex-1 space-y-1 px-2 py-4 overflow-y-auto">
         {navigation.map((item) => {
           const isActive = pathname === item.href ||
             (item.href !== '/' && pathname.startsWith(item.href));
@@ -75,16 +78,39 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
+      {/* User Footer */}
       <div className="border-t border-slate-700 p-4">
-        <div className="flex items-center">
-          <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center">
-            <span className="text-sm font-medium text-white">HS</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center min-w-0">
+            {user?.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt="Profilbild"
+                className="h-8 w-8 rounded-full"
+              />
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center">
+                <span className="text-sm font-medium text-white">
+                  {user?.email?.charAt(0).toUpperCase() || 'H'}
+                </span>
+              </div>
+            )}
+            <div className="ml-3 min-w-0">
+              <p className="text-sm font-medium text-white truncate">
+                {user?.displayName || 'Hotel Stadler'}
+              </p>
+              <p className="text-xs text-slate-400 truncate">
+                {user?.email || 'Attersee'}
+              </p>
+            </div>
           </div>
-          <div className="ml-3">
-            <p className="text-sm font-medium text-white">Hotel Stadler</p>
-            <p className="text-xs text-slate-400">Attersee</p>
-          </div>
+          <button
+            onClick={logout}
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            title="Abmelden"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </div>
