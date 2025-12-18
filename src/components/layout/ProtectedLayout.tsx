@@ -3,18 +3,18 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import Sidebar from './Sidebar';
+import { SidebarProvider, SlideOutSidebar } from './NewSidebar';
+import { SearchProvider, SearchOverlay } from './SearchOverlay';
+import { GuestDrawerProvider, GuestDrawer } from '../drawers/GuestDrawer';
+import TopBar from './TopBar';
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading, isAuthorized, logout } = useAuth();
+  const { user, loading, isAuthorized } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    // Nicht prüfen wenn noch am laden oder auf login-seite
     if (loading || pathname === '/login') return;
-
-    // Wenn nicht eingeloggt oder nicht autorisiert -> Login
     if (!user || !isAuthorized) {
       router.push('/login');
     }
@@ -28,10 +28,10 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   // Ladebildschirm
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-100">
+      <div className="flex h-screen items-center justify-center bg-white">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600">Lade...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-200 border-t-slate-900 mx-auto mb-4"></div>
+          <p className="text-slate-500 text-sm">Lade...</p>
         </div>
       </div>
     );
@@ -39,16 +39,34 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
 
   // Nicht autorisiert
   if (!user || !isAuthorized) {
-    return null; // Redirect passiert im useEffect
+    return null;
   }
 
-  // Autorisiert - zeige die App
+  // Autorisiert - zeige die App mit neuem Layout
   return (
-    <div className="flex h-screen bg-slate-100">
-      <Sidebar />
-      <main className="flex-1 overflow-auto">
-        {children}
-      </main>
-    </div>
+    <SidebarProvider>
+      <SearchProvider>
+        <GuestDrawerProvider>
+          <div className="min-h-screen bg-white">
+            {/* Slide-Out Sidebar */}
+            <SlideOutSidebar />
+
+            {/* Search Overlay */}
+            <SearchOverlay />
+
+            {/* Guest Drawer */}
+            <GuestDrawer />
+
+            {/* Main Content */}
+            <div className="flex flex-col min-h-screen">
+              <TopBar />
+              <main className="flex-1">
+                {children}
+              </main>
+            </div>
+          </div>
+        </GuestDrawerProvider>
+      </SearchProvider>
+    </SidebarProvider>
   );
 }
