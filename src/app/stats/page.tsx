@@ -1,7 +1,25 @@
 'use client';
 
 import { useState } from 'react';
-import { TrendingUp, TrendingDown, Users, Euro, Hotel, Calendar } from 'lucide-react';
+import { TrendingUp, TrendingDown, Users, Euro, Hotel, Calendar, ChevronDown, Package } from 'lucide-react';
+
+// Jahre und Monate fuer Filter
+const years = [2024, 2025];
+const months = [
+  { value: 0, label: 'Alle Monate' },
+  { value: 1, label: 'Januar' },
+  { value: 2, label: 'Februar' },
+  { value: 3, label: 'Maerz' },
+  { value: 4, label: 'April' },
+  { value: 5, label: 'Mai' },
+  { value: 6, label: 'Juni' },
+  { value: 7, label: 'Juli' },
+  { value: 8, label: 'August' },
+  { value: 9, label: 'September' },
+  { value: 10, label: 'Oktober' },
+  { value: 11, label: 'November' },
+  { value: 12, label: 'Dezember' },
+];
 
 const monthlyData = [
   { month: 'Jan', bookings: 45, revenue: 12500, occupancy: 42 },
@@ -34,8 +52,20 @@ const categoryStats = [
   { name: 'EZ Standard', bookings: 80, revenue: 13000, avgPrice: 95 },
 ];
 
+const articleStats = [
+  { name: 'Fruehstueck', quantity: 2450, revenue: 36750, avgPrice: 15 },
+  { name: 'Halbpension', quantity: 1820, revenue: 63700, avgPrice: 35 },
+  { name: 'Parkplatz', quantity: 890, revenue: 8900, avgPrice: 10 },
+  { name: 'E-Bike Verleih', quantity: 156, revenue: 4680, avgPrice: 30 },
+  { name: 'Massage', quantity: 89, revenue: 5340, avgPrice: 60 },
+  { name: 'Wellness-Paket', quantity: 45, revenue: 3150, avgPrice: 70 },
+  { name: 'Minibar', quantity: 420, revenue: 2940, avgPrice: 7 },
+  { name: 'Waesche-Service', quantity: 78, revenue: 1170, avgPrice: 15 },
+];
+
 export default function StatsPage() {
-  const [period, setPeriod] = useState<'month' | 'year'>('year');
+  const [selectedYear, setSelectedYear] = useState(2024);
+  const [selectedMonth, setSelectedMonth] = useState(0); // 0 = alle Monate
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('de-DE', {
@@ -45,11 +75,18 @@ export default function StatsPage() {
     }).format(amount);
   };
 
-  // Calculate totals
-  const totalBookings = monthlyData.reduce((sum, m) => sum + m.bookings, 0);
-  const totalRevenue = monthlyData.reduce((sum, m) => sum + m.revenue, 0);
-  const avgOccupancy = Math.round(monthlyData.reduce((sum, m) => sum + m.occupancy, 0) / monthlyData.length);
+  // Calculate totals based on filter
+  const filteredData = selectedMonth === 0
+    ? monthlyData
+    : [monthlyData[selectedMonth - 1]];
+
+  const totalBookings = filteredData.reduce((sum, m) => sum + m.bookings, 0);
+  const totalRevenue = filteredData.reduce((sum, m) => sum + m.revenue, 0);
+  const avgOccupancy = Math.round(filteredData.reduce((sum, m) => sum + m.occupancy, 0) / filteredData.length);
   const maxRevenue = Math.max(...monthlyData.map(m => m.revenue));
+
+  // Artikel-Umsatz berechnen
+  const totalArticleRevenue = articleStats.reduce((sum, a) => sum + a.revenue, 0);
 
   return (
     <div className="p-8">
@@ -57,27 +94,49 @@ export default function StatsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Statistiken</h1>
-          <p className="mt-1 text-slate-600">Übersicht über Buchungen und Umsatz</p>
+          <p className="mt-1 text-slate-600">Uebersicht ueber Buchungen und Umsatz</p>
         </div>
-        <div className="flex items-center bg-white rounded-lg shadow-sm border border-slate-200">
-          <button
-            onClick={() => setPeriod('month')}
-            className={`px-4 py-2 text-sm font-medium rounded-l-lg ${
-              period === 'month' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            Monat
-          </button>
-          <button
-            onClick={() => setPeriod('year')}
-            className={`px-4 py-2 text-sm font-medium rounded-r-lg ${
-              period === 'year' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            Jahr
-          </button>
+
+        {/* Jahr und Monat Filter */}
+        <div className="flex items-center gap-3">
+          {/* Jahr */}
+          <div className="relative">
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="appearance-none px-4 py-2 pr-10 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              {years.map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+          </div>
+
+          {/* Monat */}
+          <div className="relative">
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+              className="appearance-none px-4 py-2 pr-10 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              {months.map((month) => (
+                <option key={month.value} value={month.value}>{month.label}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+          </div>
         </div>
       </div>
+
+      {/* Filter Info */}
+      {selectedMonth > 0 && (
+        <div className="mb-4 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg inline-block">
+          <span className="text-sm text-blue-700">
+            Anzeige: {months[selectedMonth].label} {selectedYear}
+          </span>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-4 gap-4 mb-8">
@@ -133,7 +192,7 @@ export default function StatsPage() {
               -3%
             </span>
           </div>
-          <p className="text-2xl font-bold text-slate-900">{formatCurrency(totalRevenue / totalBookings)}</p>
+          <p className="text-2xl font-bold text-slate-900">{formatCurrency(totalRevenue / Math.max(totalBookings, 1))}</p>
           <p className="text-sm text-slate-500">Ø Buchungswert</p>
         </div>
       </div>
@@ -144,14 +203,21 @@ export default function StatsPage() {
         <div className="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="font-semibold text-slate-900 mb-4">Umsatz pro Monat</h3>
           <div className="h-64 flex items-end gap-2">
-            {monthlyData.map((data) => (
+            {monthlyData.map((data, index) => (
               <div key={data.month} className="flex-1 flex flex-col items-center gap-2">
                 <div
-                  className="w-full bg-blue-500 rounded-t hover:bg-blue-600 transition-colors cursor-pointer"
+                  className={`w-full rounded-t transition-colors cursor-pointer ${
+                    selectedMonth === 0 || selectedMonth === index + 1
+                      ? 'bg-blue-500 hover:bg-blue-600'
+                      : 'bg-slate-200'
+                  }`}
                   style={{ height: `${(data.revenue / maxRevenue) * 200}px` }}
                   title={formatCurrency(data.revenue)}
+                  onClick={() => setSelectedMonth(index + 1)}
                 />
-                <span className="text-xs text-slate-500">{data.month}</span>
+                <span className={`text-xs ${selectedMonth === index + 1 ? 'text-blue-600 font-semibold' : 'text-slate-500'}`}>
+                  {data.month}
+                </span>
               </div>
             ))}
           </div>
@@ -159,7 +225,7 @@ export default function StatsPage() {
 
         {/* Channel Distribution */}
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h3 className="font-semibold text-slate-900 mb-4">Buchungskanäle</h3>
+          <h3 className="font-semibold text-slate-900 mb-4">Buchungskanaele</h3>
           <div className="space-y-4">
             {channelStats.map((channel) => (
               <div key={channel.name}>
@@ -179,31 +245,62 @@ export default function StatsPage() {
         </div>
       </div>
 
-      {/* Category Stats */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="p-5 border-b border-slate-200">
-          <h3 className="font-semibold text-slate-900">Umsatz nach Zimmerkategorie</h3>
-        </div>
-        <table className="w-full">
-          <thead>
-            <tr className="bg-slate-50">
-              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Kategorie</th>
-              <th className="text-center px-6 py-3 text-sm font-semibold text-slate-700">Buchungen</th>
-              <th className="text-right px-6 py-3 text-sm font-semibold text-slate-700">Umsatz</th>
-              <th className="text-right px-6 py-3 text-sm font-semibold text-slate-700">Ø Preis/Nacht</th>
-            </tr>
-          </thead>
-          <tbody>
-            {categoryStats.map((cat) => (
-              <tr key={cat.name} className="border-t border-slate-100">
-                <td className="px-6 py-4 font-medium text-slate-900">{cat.name}</td>
-                <td className="px-6 py-4 text-center text-slate-700">{cat.bookings}</td>
-                <td className="px-6 py-4 text-right font-semibold text-emerald-600">{formatCurrency(cat.revenue)}</td>
-                <td className="px-6 py-4 text-right text-slate-700">{formatCurrency(cat.avgPrice)}</td>
+      {/* Two Tables Side by Side */}
+      <div className="grid grid-cols-2 gap-6">
+        {/* Category Stats */}
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="p-5 border-b border-slate-200 flex items-center gap-2">
+            <Hotel className="h-5 w-5 text-slate-400" />
+            <h3 className="font-semibold text-slate-900">Umsatz nach Zimmerkategorie</h3>
+          </div>
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50">
+                <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Kategorie</th>
+                <th className="text-center px-6 py-3 text-sm font-semibold text-slate-700">Buchungen</th>
+                <th className="text-right px-6 py-3 text-sm font-semibold text-slate-700">Umsatz</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {categoryStats.map((cat) => (
+                <tr key={cat.name} className="border-t border-slate-100">
+                  <td className="px-6 py-3 font-medium text-slate-900">{cat.name}</td>
+                  <td className="px-6 py-3 text-center text-slate-700">{cat.bookings}</td>
+                  <td className="px-6 py-3 text-right font-semibold text-emerald-600">{formatCurrency(cat.revenue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Article Stats */}
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-slate-400" />
+              <h3 className="font-semibold text-slate-900">Umsatz nach Artikel</h3>
+            </div>
+            <span className="text-sm text-slate-500">Gesamt: {formatCurrency(totalArticleRevenue)}</span>
+          </div>
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50">
+                <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Artikel</th>
+                <th className="text-center px-6 py-3 text-sm font-semibold text-slate-700">Anzahl</th>
+                <th className="text-right px-6 py-3 text-sm font-semibold text-slate-700">Umsatz</th>
+              </tr>
+            </thead>
+            <tbody>
+              {articleStats.map((article) => (
+                <tr key={article.name} className="border-t border-slate-100">
+                  <td className="px-6 py-3 font-medium text-slate-900">{article.name}</td>
+                  <td className="px-6 py-3 text-center text-slate-700">{article.quantity}</td>
+                  <td className="px-6 py-3 text-right font-semibold text-emerald-600">{formatCurrency(article.revenue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

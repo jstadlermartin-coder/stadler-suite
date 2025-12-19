@@ -1,0 +1,71 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper function: Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function: Check if user email matches hotel domain
+    function isHotelUser() {
+      return isAuthenticated() &&
+             request.auth.token.email.matches('.*@seegasthof-stadler[.]at$');
+    }
+
+    // Helper function: Check file size (max 10MB)
+    function isValidSize() {
+      return request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Helper function: Check if file is an image
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    // Helper function: Check if file is a video
+    function isVideo() {
+      return request.resource.contentType.matches('video/.*');
+    }
+
+    // Room photos - images only, max 10MB
+    match /rooms/{roomId}/photos/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isHotelUser() && isImage() && isValidSize();
+      allow delete: if isHotelUser();
+    }
+
+    // Room videos - videos only, max 50MB
+    match /rooms/{roomId}/videos/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isHotelUser() && isVideo() && request.resource.size < 50 * 1024 * 1024;
+      allow delete: if isHotelUser();
+    }
+
+    // Room 3D tours - any file type, max 100MB
+    match /rooms/{roomId}/tours/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isHotelUser() && request.resource.size < 100 * 1024 * 1024;
+      allow delete: if isHotelUser();
+    }
+
+    // Guest documents (ID scans, etc.) - images/PDFs, max 10MB
+    match /guests/{guestId}/documents/{fileName} {
+      allow read: if isHotelUser();
+      allow write: if isHotelUser() && isValidSize();
+      allow delete: if isHotelUser();
+    }
+
+    // Downloads folder - public read for bridge exe and other tools
+    match /downloads/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isHotelUser();
+    }
+
+    // Deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

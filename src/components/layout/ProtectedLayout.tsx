@@ -1,45 +1,47 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { SidebarProvider, SlideOutSidebar } from './NewSidebar';
 import { SearchProvider, SearchOverlay } from './SearchOverlay';
 import { GuestDrawerProvider, GuestDrawer } from '../drawers/GuestDrawer';
+import { BookingWizardProvider, NewBookingWizard } from '../booking/NewBookingWizard';
 import TopBar from './TopBar';
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, isAuthorized } = useAuth();
-  const router = useRouter();
   const pathname = usePathname();
 
+  // Flexiblere Prüfung für Login-Seite
+  const isLoginPage = pathname === '/login' || pathname === '/login/' || pathname?.startsWith('/login');
+
+  // Auch Browser-URL prüfen als Fallback
+  const browserPath = typeof window !== 'undefined' ? window.location.pathname : '';
+  const isOnLoginPage = isLoginPage || browserPath === '/login' || browserPath === '/login/';
+
+  // Redirect nur wenn NICHT auf Login-Seite und NICHT eingeloggt
   useEffect(() => {
-    if (loading || pathname === '/login') return;
-    if (!user || !isAuthorized) {
-      router.push('/login');
+    if (!loading && !user && !isOnLoginPage) {
+      window.location.href = '/login';
     }
-  }, [user, loading, isAuthorized, router, pathname]);
+  }, [loading, user, isOnLoginPage]);
 
   // Login-Seite braucht keinen Schutz
-  if (pathname === '/login') {
+  if (isOnLoginPage) {
     return <>{children}</>;
   }
 
-  // Ladebildschirm
-  if (loading) {
+  // Ladebildschirm während Auth-Check oder Redirect
+  if (loading || !user || !isAuthorized) {
     return (
-      <div className="flex h-screen items-center justify-center bg-white">
+      <div className="flex h-screen items-center justify-center bg-slate-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-200 border-t-slate-900 mx-auto mb-4"></div>
-          <p className="text-slate-500 text-sm">Lade...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-700 border-t-white mx-auto mb-4"></div>
+          <p className="text-slate-400 text-sm">Lade...</p>
         </div>
       </div>
     );
-  }
-
-  // Nicht autorisiert
-  if (!user || !isAuthorized) {
-    return null;
   }
 
   // Autorisiert - zeige die App mit neuem Layout
@@ -47,24 +49,20 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     <SidebarProvider>
       <SearchProvider>
         <GuestDrawerProvider>
-          <div className="min-h-screen bg-white">
-            {/* Slide-Out Sidebar */}
-            <SlideOutSidebar />
-
-            {/* Search Overlay */}
-            <SearchOverlay />
-
-            {/* Guest Drawer */}
-            <GuestDrawer />
-
-            {/* Main Content */}
-            <div className="flex flex-col min-h-screen">
-              <TopBar />
-              <main className="flex-1">
-                {children}
-              </main>
+          <BookingWizardProvider>
+            <div className="min-h-screen bg-white">
+              <SlideOutSidebar />
+              <SearchOverlay />
+              <GuestDrawer />
+              <NewBookingWizard />
+              <div className="flex flex-col min-h-screen">
+                <TopBar />
+                <main className="flex-1">
+                  {children}
+                </main>
+              </div>
             </div>
-          </div>
+          </BookingWizardProvider>
         </GuestDrawerProvider>
       </SearchProvider>
     </SidebarProvider>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
 import { Search, X, User, FileText, Calendar } from 'lucide-react';
+import { useGuestDrawer } from '../drawers/GuestDrawer';
 
 // Search Context
 interface SearchContextType {
@@ -64,10 +65,16 @@ interface SearchResult {
   title: string;
   subtitle: string;
   meta?: string;
+  // Guest data für CDS
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
 }
 
 export function SearchOverlay() {
   const { isOpen, close } = useSearch();
+  const { openGuest } = useGuestDrawer();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -106,7 +113,11 @@ export function SearchOverlay() {
           type: 'guest' as const,
           title: 'Max Mustermann',
           subtitle: 'max.mustermann@example.com',
-          meta: '+43 664 1234567'
+          meta: '+43 664 1234567',
+          firstName: 'Max',
+          lastName: 'Mustermann',
+          email: 'max.mustermann@example.com',
+          phone: '+43 664 1234567'
         },
         {
           id: '2',
@@ -120,7 +131,11 @@ export function SearchOverlay() {
           type: 'guest' as const,
           title: 'Maria Musterfrau',
           subtitle: 'maria@example.com',
-          meta: '+43 660 9876543'
+          meta: '+43 660 9876543',
+          firstName: 'Maria',
+          lastName: 'Musterfrau',
+          email: 'maria@example.com',
+          phone: '+43 660 9876543'
         }
       ] as SearchResult[]).filter(r =>
         r.title.toLowerCase().includes(query.toLowerCase()) ||
@@ -138,28 +153,26 @@ export function SearchOverlay() {
 
   return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col">
-      {/* Header mit Suchleiste */}
+      {/* Header mit Suchleiste - Full Width, No Border */}
       <div className="border-b border-slate-200">
-        <div className="max-w-3xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-              <input
-                ref={inputRef}
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Name, E-Mail, Telefon, Buchungsnummer..."
-                className="w-full pl-12 pr-4 py-3 bg-slate-100 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
-              />
-            </div>
-            <button
-              onClick={close}
-              className="p-3 hover:bg-slate-100 rounded-xl transition-colors"
-            >
-              <X className="h-6 w-6 text-slate-700" />
-            </button>
+        <div className="flex items-center">
+          <div className="flex-1 relative">
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Name, E-Mail, Telefon, Buchungsnummer..."
+              className="w-full pl-14 pr-6 py-5 text-lg text-slate-900 placeholder-slate-400 focus:outline-none"
+            />
           </div>
+          <button
+            onClick={close}
+            className="p-5 hover:bg-slate-100 transition-colors"
+          >
+            <X className="h-6 w-6 text-slate-700" />
+          </button>
         </div>
       </div>
 
@@ -181,7 +194,15 @@ export function SearchOverlay() {
                 <button
                   key={result.id}
                   onClick={() => {
-                    // TODO: Navigation zum Ergebnis
+                    if (result.type === 'guest' && result.firstName && result.lastName) {
+                      openGuest({
+                        id: result.id,
+                        firstName: result.firstName,
+                        lastName: result.lastName,
+                        email: result.email,
+                        phone: result.phone
+                      });
+                    }
                     close();
                   }}
                   className="w-full flex items-center gap-4 p-4 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors text-left"

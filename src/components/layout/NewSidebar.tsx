@@ -10,11 +10,9 @@ import {
   Calendar,
   Database,
   Settings,
-  LogOut,
   MessageSquare,
   BarChart3
 } from 'lucide-react';
-import { useAuth } from '@/lib/auth';
 
 // Sidebar Context für globalen Toggle-State
 interface SidebarContextType {
@@ -52,7 +50,6 @@ const navigation = [
   { name: 'Database', href: '/database', icon: Database },
   { name: 'Offer Office', href: '/offer-office', icon: MessageSquare },
   { name: 'Statistiken', href: '/stats', icon: BarChart3 },
-  { name: 'Einstellungen', href: '/settings', icon: Settings },
 ];
 
 export function HamburgerButton() {
@@ -76,12 +73,6 @@ export function HamburgerButton() {
 export function SlideOutSidebar() {
   const { isOpen, close } = useSidebar();
   const pathname = usePathname();
-  const { user, logout } = useAuth();
-
-  const handleLogout = async () => {
-    await logout();
-    close();
-  };
 
   return (
     <>
@@ -130,52 +121,35 @@ export function SlideOutSidebar() {
                   flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium
                   transition-all duration-200
                   ${isActive
-                    ? 'bg-slate-900 text-white'
+                    ? 'bg-blue-50 text-blue-600 border border-blue-200'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }
                 `}
               >
-                <item.icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                <item.icon className={`h-5 w-5 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
                 {item.name}
               </Link>
             );
           })}
         </nav>
 
-        {/* User Footer */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 min-w-0">
-              {user?.photoURL ? (
-                <img
-                  src={user.photoURL}
-                  alt="Profil"
-                  className="h-10 w-10 rounded-full"
-                />
-              ) : (
-                <div className="h-10 w-10 rounded-full bg-slate-900 flex items-center justify-center">
-                  <span className="text-sm font-medium text-white">
-                    {user?.email?.charAt(0).toUpperCase() || 'S'}
-                  </span>
-                </div>
-              )}
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-900 truncate">
-                  {user?.displayName || 'Hotel Stadler'}
-                </p>
-                <p className="text-xs text-slate-500 truncate">
-                  {user?.email || ''}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-              title="Abmelden"
-            >
-              <LogOut className="h-5 w-5" />
-            </button>
-          </div>
+        {/* Settings Footer */}
+        <div className="absolute bottom-0 left-0 right-0 border-t border-slate-100 p-4">
+          <Link
+            href="/settings"
+            onClick={close}
+            className={`
+              flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium
+              transition-all duration-200
+              ${pathname === '/settings' || pathname?.startsWith('/settings')
+                ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }
+            `}
+          >
+            <Settings className={`h-5 w-5 ${pathname === '/settings' ? 'text-blue-600' : 'text-slate-400'}`} />
+            Einstellungen
+          </Link>
         </div>
       </div>
     </>

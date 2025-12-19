@@ -183,9 +183,8 @@ export default function BookingsPage() {
             {filteredBookings.length} Buchungen
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+        <button className="flex items-center justify-center w-10 h-10 border-2 border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors" title="Neue Buchung">
           <Plus className="h-5 w-5" />
-          <span>Neue Buchung</span>
         </button>
       </div>
 

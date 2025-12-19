@@ -1,16 +1,16 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 
-// Firebase Konfiguration
-// WICHTIG: Ersetze diese Werte mit deinen echten Firebase-Werten!
+// Firebase Konfiguration - Werte direkt eingebettet für Static Export
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "DEINE_API_KEY",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "stadler-suite.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "stadler-suite",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "stadler-suite.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "123456789",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:123456789:web:abcdef"
+  apiKey: "AIzaSyBGr-2g5GTH0jqlEmd8niADdXRXszqGbpY",
+  authDomain: "stadler-suite.firebaseapp.com",
+  projectId: "stadler-suite",
+  storageBucket: "stadler-suite.firebasestorage.app",
+  messagingSenderId: "818386536862",
+  appId: "1:818386536862:web:387cf2e81915bd25f0ee8f"
 };
 
 // Firebase App initialisieren (nur einmal)
@@ -21,5 +21,8 @@ export const db = getFirestore(app);
 
 // Authentication
 export const auth = getAuth(app);
+
+// Storage für Bilder und 3D-Touren
+export const storage = getStorage(app);
 
 export default app;
