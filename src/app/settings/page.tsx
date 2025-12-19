@@ -7,6 +7,8 @@ import {
   saveHotelInfo,
   saveCategories,
   saveSeasons,
+  getBuildings,
+  saveBuildings,
   getBridgeMappings,
   saveBridgeConfig,
   saveRoomMappings,
@@ -21,6 +23,7 @@ import {
   HotelInfo as FirestoreHotelInfo,
   Category as FirestoreCategory,
   Season as FirestoreSeason,
+  Building as FirestoreBuilding,
   BridgeConfig,
   RoomMapping,
   ArticleMapping,
@@ -410,10 +413,11 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     const loadData = async () => {
       try {
         setLoading(true);
-        const [settings, bridgeMappings, savedSyncStatus] = await Promise.all([
+        const [settings, bridgeMappings, savedSyncStatus, savedBuildings] = await Promise.all([
           loadAllSettings(),
           getBridgeMappings(),
-          getSyncStatus()
+          getSyncStatus(),
+          getBuildings()
         ]);
 
         if (settings.hotelInfo) {
@@ -441,6 +445,11 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
         // Load sync status
         if (savedSyncStatus) {
           setSyncStatus(savedSyncStatus);
+        }
+
+        // Load buildings
+        if (savedBuildings && savedBuildings.length > 0) {
+          setBuildings(savedBuildings as Building[]);
         }
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -487,6 +496,16 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
       await saveSeasons(newSeasons as FirestoreSeason[]);
     } catch (error) {
       console.error('Error saving seasons:', error);
+    }
+  };
+
+  // Save buildings to Firestore
+  const saveBuildingsData = async (newBuildings: Building[]) => {
+    setBuildings(newBuildings);
+    try {
+      await saveBuildings(newBuildings as FirestoreBuilding[]);
+    } catch (error) {
+      console.error('Error saving buildings:', error);
     }
   };
 
@@ -819,6 +838,16 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   }, [activeTab, communicationSubTab]);
 
   const checkWhatsAppStatusAuto = async () => {
+    // Check if we're on HTTPS and trying to call HTTP API (Mixed Content)
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const apiUrl = WHATSAPP_API_URL;
+
+    if (isHttps && apiUrl.startsWith('http://')) {
+      console.warn('Mixed Content: HTTPS page cannot access HTTP API. WhatsApp server needs HTTPS.');
+      setWhatsappStatus('disconnected');
+      return;
+    }
+
     try {
       // Check if our session exists
       const statusResponse = await fetch(`${WHATSAPP_API_URL}/status`, {
@@ -1811,7 +1840,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     if (confirm(`Möchtest du "${building.name}" wirklich löschen?`)) {
-                                      setBuildings(buildings.filter(b => b.id !== building.id));
+                                      saveBuildingsData(buildings.filter(b => b.id !== building.id));
                                     }
                                   }}
                                   className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -2207,11 +2236,26 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                     </div>
                   ) : (
                     <div className="text-center py-8">
-                      <div className="h-16 w-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Phone className="h-8 w-8 text-slate-400" />
-                      </div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-2">WhatsApp verbinden</h3>
-                      <p className="text-slate-500 mb-4">Klicken Sie auf &quot;Status prüfen&quot; um den QR-Code zu laden.</p>
+                      {typeof window !== 'undefined' && window.location.protocol === 'https:' && WHATSAPP_API_URL.startsWith('http://') ? (
+                        <>
+                          <div className="h-16 w-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <AlertCircle className="h-8 w-8 text-orange-500" />
+                          </div>
+                          <h3 className="text-lg font-semibold text-slate-900 mb-2">HTTPS erforderlich</h3>
+                          <p className="text-slate-500 mb-4">
+                            Der WhatsApp-Server benötigt HTTPS um von dieser Seite aus erreichbar zu sein.
+                            Bitte konfigurieren Sie SSL auf Ihrem WhatsApp-Server (Port 3001).
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <div className="h-16 w-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Phone className="h-8 w-8 text-slate-400" />
+                          </div>
+                          <h3 className="text-lg font-semibold text-slate-900 mb-2">WhatsApp verbinden</h3>
+                          <p className="text-slate-500 mb-4">Klicken Sie auf &quot;Status prüfen&quot; um den QR-Code zu laden.</p>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -4466,64 +4510,42 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                           </button>
                         </div>
 
-                        {/* Rooms List */}
-                        <div className="divide-y divide-slate-100">
-                          {category.rooms.length === 0 ? (
-                            <div className="p-6 text-center text-slate-400 text-sm">
-                              Keine Zimmer in dieser Kategorie
+                        {/* Seasons for this Category */}
+                        <div className="p-4">
+                          {categorySeasons.length === 0 ? (
+                            <div className="text-center text-slate-400 text-sm py-4">
+                              Keine Saisonen definiert - Klicke auf &quot;Saison&quot; um eine zu erstellen
                             </div>
                           ) : (
-                            category.rooms.map((room) => (
-                              <div key={room.id} className="p-4 hover:bg-slate-50 transition-colors">
-                                <div className="flex items-start gap-4">
-                                  {/* Room Info */}
-                                  <div className="min-w-[160px]">
-                                    <div className="font-medium text-slate-900">{room.number || room.name}</div>
-                                    {room.number && room.name && room.name !== room.number && (
-                                      <div className="text-sm text-slate-500">{room.name}</div>
-                                    )}
+                            <div className="flex flex-wrap gap-3">
+                              {categorySeasons.map((season) => (
+                                <div
+                                  key={season.id}
+                                  onClick={() => openSeasonDrawer(category.id, season)}
+                                  className="bg-white border border-slate-200 rounded-lg p-4 min-w-[220px] cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="font-medium text-slate-900">{season.name}</span>
+                                    <Pencil className="h-4 w-4 text-slate-300" />
                                   </div>
-
-                                  {/* Seasons with Prices */}
-                                  <div className="flex-1 flex flex-wrap gap-3">
-                                    {categorySeasons.length === 0 ? (
-                                      <span className="text-sm text-slate-400">Keine Saisonen definiert</span>
-                                    ) : (
-                                      categorySeasons.map((season) => (
-                                        <div
-                                          key={season.id}
-                                          onClick={() => openSeasonDrawer(category.id, season)}
-                                          className="bg-white border border-slate-200 rounded-lg p-3 min-w-[180px] cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all"
-                                        >
-                                          <div className="flex items-center justify-between mb-2">
-                                            <span className="font-medium text-slate-700 text-sm">{season.name}</span>
-                                            <Pencil className="h-3 w-3 text-slate-300" />
-                                          </div>
-                                          <div className="text-xs text-slate-400 mb-2">
-                                            {new Date(season.startDate).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' })} - {new Date(season.endDate).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' })}
-                                          </div>
-                                          {season.rates.length > 0 ? (
-                                            <div className="space-y-1">
-                                              {season.rates.slice(0, 2).map((rate) => (
-                                                <div key={rate.id} className="flex items-center justify-between text-sm">
-                                                  <span className="text-slate-500 truncate">{rate.name}</span>
-                                                  <span className="font-semibold text-blue-600">€{rate.pricePerAdult.toFixed(0)}</span>
-                                                </div>
-                                              ))}
-                                              {season.rates.length > 2 && (
-                                                <div className="text-xs text-slate-400">+{season.rates.length - 2} weitere</div>
-                                              )}
-                                            </div>
-                                          ) : (
-                                            <div className="text-xs text-slate-400">Keine Raten</div>
-                                          )}
+                                  <div className="text-sm text-slate-500 mb-3">
+                                    {new Date(season.startDate).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' })} - {new Date(season.endDate).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' })}
+                                  </div>
+                                  {season.rates.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {season.rates.map((rate) => (
+                                        <div key={rate.id} className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
+                                          <span className="text-slate-600">{rate.name}</span>
+                                          <span className="font-bold text-blue-600">€{rate.pricePerAdult.toFixed(0)}</span>
                                         </div>
-                                      ))
-                                    )}
-                                  </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-sm text-slate-400 text-center py-2">Keine Raten</div>
+                                  )}
                                 </div>
-                              </div>
-                            ))
+                              ))}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -4583,7 +4605,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                   if (!newBuilding.name.trim()) return;
 
                   if (editingBuilding) {
-                    setBuildings(buildings.map(b =>
+                    saveBuildingsData(buildings.map(b =>
                       b.id === editingBuilding.id
                         ? { ...b, name: newBuilding.name, description: newBuilding.description }
                         : b
@@ -4594,7 +4616,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                       name: newBuilding.name,
                       description: newBuilding.description || undefined
                     };
-                    setBuildings([...buildings, building]);
+                    saveBuildingsData([...buildings, building]);
                   }
                   setBuildingDrawerOpen(false);
                 }}
