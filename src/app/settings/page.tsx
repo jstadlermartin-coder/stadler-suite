@@ -77,7 +77,8 @@ import {
   FileText,
   HardDrive,
   Phone,
-  Mail
+  Mail,
+  Home
 } from 'lucide-react';
 
 // Types
@@ -147,16 +148,24 @@ const FEATURE_CATEGORIES: { id: FeatureCategory; name: string }[] = [
   { id: 'other', name: 'Sonstiges' },
 ];
 
+interface Building {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 interface Room {
   id: string;
   number: string;
   name: string;
+  buildingId?: string; // Welches Gebäude/Haus
   occupancies: Occupancy[];
   description?: string;
   photos?: string[];
   videos?: string[];
   tours3d?: string[];
   features?: string[]; // Array of feature IDs
+  customFeatures?: { id: string; name: string; category: FeatureCategory }[]; // Custom features per room
 }
 
 interface Occupancy {
@@ -277,14 +286,18 @@ const PRICE_UNITS: { id: ArticlePriceUnit; label: string }[] = [
 export default function SettingsPage() {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'basic' | 'resource' | 'communication' | 'bridge' | 'ai'>('basic');
-  const [resourceSubTab, setResourceSubTab] = useState<'kategorie' | 'preise' | 'artikel'>('kategorie');
-  const [communicationSubTab, setCommunicationSubTab] = useState<'email' | 'whatsapp'>('whatsapp');
+  const [resourceSubTab, setResourceSubTab] = useState<'lage' | 'kategorie' | 'artikel'>('lage');
+  const [communicationSubTab, setCommunicationSubTab] = useState<'whatsapp' | 'email' | 'email-template' | 'email-import' | 'public-pages'>('whatsapp');
   const [bridgeStatus, setBridgeStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
 
-  // WhatsApp State
+  // WhatsApp State & API Config
+  const WHATSAPP_API_URL = 'http://146.148.3.123:3001';
+  const WHATSAPP_API_KEY = 'tt_live_a8f3k2m9x7p4q1w6';
+  const WHATSAPP_SESSION_ID = 'stadler-suite';
   const [whatsappStatus, setWhatsappStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
   const [whatsappQrCode, setWhatsappQrCode] = useState<string | null>(null);
   const [whatsappLoading, setWhatsappLoading] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState<string | null>(null);
   const [bridgeDownloading, setBridgeDownloading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -334,6 +347,12 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
 
   // Categories State
   const [categories, setCategories] = useState<Category[]>([]);
+
+  // Buildings State
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [buildingDrawerOpen, setBuildingDrawerOpen] = useState(false);
+  const [editingBuilding, setEditingBuilding] = useState<Building | null>(null);
+  const [newBuilding, setNewBuilding] = useState({ name: '', description: '' });
 
   // Seasons State
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -477,6 +496,8 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   const [seasonDrawerOpen, setSeasonDrawerOpen] = useState(false);
   const [rateDrawerOpen, setRateDrawerOpen] = useState(false);
   const [rateDrawerSeasonId, setRateDrawerSeasonId] = useState<string | null>(null);
+  const [pricingFullscreenOpen, setPricingFullscreenOpen] = useState(false);
+  const [selectedPricingCategory, setSelectedPricingCategory] = useState<string | null>(null);
 
   // Edit States
   const [editingRoom, setEditingRoom] = useState<{ categoryId: string; room: Room | null }>({ categoryId: '', room: null });
@@ -484,8 +505,10 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   // Form States
   const [newCategory, setNewCategory] = useState({ name: '', description: '' });
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [newRoom, setNewRoom] = useState<Partial<Room>>({ number: '', name: '', occupancies: [], description: '' });
-  const [roomDrawerPage, setRoomDrawerPage] = useState<1 | 2 | 3>(1);
+  const [newRoom, setNewRoom] = useState<Partial<Room>>({ number: '', name: '', occupancies: [], description: '', customFeatures: [] });
+  const [roomDrawerPage, setRoomDrawerPage] = useState<1 | 2 | 3 | 4>(1);
+  const [addingCustomFeature, setAddingCustomFeature] = useState<FeatureCategory | null>(null);
+  const [customFeatureName, setCustomFeatureName] = useState('');
   const [newSeason, setNewSeason] = useState({ name: '', startDate: '', endDate: '', categoryId: '' });
   const [editingSeason, setEditingSeason] = useState<Season | null>(null);
   const [selectedPriceCategory, setSelectedPriceCategory] = useState<string | null>(null);
@@ -777,6 +800,97 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     return () => clearInterval(interval);
   }, [syncStatus.autoSyncEnabled, syncStatus.autoSyncInterval, bridgeStatus, bridgeConfig.bridgeUrl]);
 
+  // WhatsApp status check - auto-load when Communication tab is active
+  useEffect(() => {
+    if (activeTab !== 'communication' || communicationSubTab !== 'whatsapp') return;
+
+    // Initial check
+    checkWhatsAppStatusAuto();
+
+    // Poll every 5 seconds while connecting (waiting for QR scan)
+    const interval = setInterval(() => {
+      if (whatsappStatus === 'connecting' || whatsappStatus === 'disconnected') {
+        checkWhatsAppStatusAuto();
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [activeTab, communicationSubTab]);
+
+  const checkWhatsAppStatusAuto = async () => {
+    try {
+      // Check if our session exists
+      const statusResponse = await fetch(`${WHATSAPP_API_URL}/status`, {
+        headers: { 'X-API-Key': WHATSAPP_API_KEY }
+      });
+      const statusData = await statusResponse.json();
+
+      // Find our session by appId (since session ID has suffix)
+      const ourSession = statusData.sessions?.find((s: { appId: string }) => s.appId === WHATSAPP_SESSION_ID);
+
+      if (ourSession) {
+        if (ourSession.status === 'connected') {
+          setWhatsappStatus('connected');
+          setWhatsappQrCode(null);
+          setWhatsappPhone(ourSession.phoneNumber || null);
+          return;
+        } else if (ourSession.hasQr) {
+          // Get QR code for existing session - use full session ID
+          const qrResponse = await fetch(`${WHATSAPP_API_URL}/sessions/${ourSession.id}/qr`, {
+            headers: { 'X-API-Key': WHATSAPP_API_KEY }
+          });
+          const qrData = await qrResponse.json();
+          if (qrData.qrCode) {
+            setWhatsappStatus('connecting');
+            setWhatsappQrCode(qrData.qrCode);
+            return;
+          }
+        }
+      }
+
+      // Session doesn't exist - create new session
+      const createResponse = await fetch(`${WHATSAPP_API_URL}/sessions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': WHATSAPP_API_KEY
+        },
+        body: JSON.stringify({
+          sessionId: WHATSAPP_SESSION_ID,
+          appId: WHATSAPP_SESSION_ID
+        })
+      });
+      const createData = await createResponse.json();
+
+      if (createData.success && createData.sessionId) {
+        // Session created, wait a bit then get QR code
+        setWhatsappStatus('connecting');
+        setTimeout(async () => {
+          try {
+            const qrResponse = await fetch(`${WHATSAPP_API_URL}/sessions/${createData.sessionId}/qr`, {
+              headers: { 'X-API-Key': WHATSAPP_API_KEY }
+            });
+            const qrData = await qrResponse.json();
+            if (qrData.qrCode) {
+              setWhatsappQrCode(qrData.qrCode);
+            }
+          } catch (err) {
+            console.error('Error getting QR code:', err);
+          }
+        }, 2000);
+      } else if (createData.status === 'connected') {
+        setWhatsappStatus('connected');
+        setWhatsappQrCode(null);
+      } else {
+        setWhatsappStatus('disconnected');
+        setWhatsappQrCode(null);
+      }
+    } catch (error) {
+      console.error('WhatsApp status check failed:', error);
+      setWhatsappStatus('disconnected');
+    }
+  };
+
   // Get all rooms from categories for mapping
   const getAllAppRooms = () => {
     const rooms: { id: string; name: string; categoryName: string }[] = [];
@@ -841,12 +955,36 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   const openRoomDrawer = (categoryId: string, room?: Room) => {
     setEditingRoom({ categoryId, room: room || null });
     if (room) {
-      setNewRoom({ ...room, features: room.features || [] });
+      setNewRoom({ ...room, features: room.features || [], customFeatures: room.customFeatures || [] });
     } else {
-      setNewRoom({ number: '', name: '', occupancies: [], description: '', features: [] });
+      setNewRoom({ number: '', name: '', occupancies: [], description: '', features: [], customFeatures: [] });
     }
     setRoomDrawerPage(1);
     setRoomDrawerOpen(true);
+  };
+
+  // Add custom feature
+  const handleAddCustomFeature = () => {
+    if (!customFeatureName.trim() || !addingCustomFeature) return;
+    const newFeature = {
+      id: `custom-${Date.now()}`,
+      name: customFeatureName.trim(),
+      category: addingCustomFeature
+    };
+    setNewRoom({
+      ...newRoom,
+      customFeatures: [...(newRoom.customFeatures || []), newFeature]
+    });
+    setCustomFeatureName('');
+    setAddingCustomFeature(null);
+  };
+
+  // Remove custom feature
+  const handleRemoveCustomFeature = (featureId: string) => {
+    setNewRoom({
+      ...newRoom,
+      customFeatures: (newRoom.customFeatures || []).filter(f => f.id !== featureId)
+    });
   };
 
   const handleAddOccupancy = () => {
@@ -1319,28 +1457,11 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  // WhatsApp API Functions
-  const WHATSAPP_API_URL = 'http://146.148.3.123:3001';
-  const WHATSAPP_API_KEY = 'tt_live_a8f3k2m9x7p4q1w6';
-
+  // WhatsApp API Functions (manual check with loading state)
   const checkWhatsAppStatus = async () => {
     setWhatsappLoading(true);
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/status`, {
-        headers: { 'X-API-Key': WHATSAPP_API_KEY }
-      });
-      const data = await response.json();
-
-      if (data.status === 'connected') {
-        setWhatsappStatus('connected');
-        setWhatsappQrCode(null);
-      } else if (data.qr) {
-        setWhatsappStatus('connecting');
-        setWhatsappQrCode(data.qr);
-      } else {
-        setWhatsappStatus('disconnected');
-        setWhatsappQrCode(null);
-      }
+      await checkWhatsAppStatusAuto();
     } catch (error) {
       console.error('WhatsApp status check failed:', error);
       setWhatsappStatus('disconnected');
@@ -1353,8 +1474,8 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     { id: 'basic' as const, label: 'Basic', icon: Building2 },
     { id: 'resource' as const, label: 'Resource', icon: Bed },
     { id: 'communication' as const, label: 'Kommunikation', icon: MessageSquare },
-    { id: 'bridge' as const, label: 'Bridge', icon: Plug },
-    { id: 'ai' as const, label: 'KI', icon: Bot }
+    { id: 'ai' as const, label: 'KI', icon: Bot },
+    { id: 'bridge' as const, label: 'Bridge', icon: Plug }
   ];
 
   const bridgeSteps = [
@@ -1594,6 +1715,17 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
             <div className="bg-white rounded-xl border border-slate-200">
               <div className="flex border-b border-slate-200">
                 <button
+                  onClick={() => setResourceSubTab('lage')}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    resourceSubTab === 'lage'
+                      ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Home className="h-4 w-4 inline mr-2" />
+                  Lage ({buildings.length})
+                </button>
+                <button
                   onClick={() => setResourceSubTab('kategorie')}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                     resourceSubTab === 'kategorie'
@@ -1603,17 +1735,6 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                 >
                   <Bed className="h-4 w-4 inline mr-2" />
                   Kategorie ({categories.length})
-                </button>
-                <button
-                  onClick={() => setResourceSubTab('preise')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                    resourceSubTab === 'preise'
-                      ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <Euro className="h-4 w-4 inline mr-2" />
-                  Preise ({seasons.length})
                 </button>
                 <button
                   onClick={() => setResourceSubTab('artikel')}
@@ -1629,11 +1750,97 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
               </div>
 
               <div className="p-6">
-                {/* Kategorie Sub-Tab */}
-                {resourceSubTab === 'kategorie' && (
+                {/* Lage Sub-Tab */}
+                {resourceSubTab === 'lage' && (
                   <div className="space-y-4">
                     {/* Action Button */}
                     <div className="flex justify-end">
+                      <button
+                        onClick={() => {
+                          setEditingBuilding(null);
+                          setNewBuilding({ name: '', description: '' });
+                          setBuildingDrawerOpen(true);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Haus/Gebäude
+                      </button>
+                    </div>
+
+                    {/* Buildings List */}
+                    {buildings.length === 0 ? (
+                      <div className="py-12 text-center">
+                        <Home className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+                        <p className="text-slate-500">Noch keine Häuser/Gebäude erstellt</p>
+                        <p className="text-sm text-slate-400 mt-1">Erstelle Gebäude um deine Zimmer nach Lage zu gruppieren</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {buildings.map((building) => {
+                          // Count rooms in this building
+                          const roomCount = categories.reduce((acc, cat) =>
+                            acc + cat.rooms.filter(r => r.buildingId === building.id).length, 0
+                          );
+                          return (
+                            <div
+                              key={building.id}
+                              onClick={() => {
+                                setEditingBuilding(building);
+                                setNewBuilding({ name: building.name, description: building.description || '' });
+                                setBuildingDrawerOpen(true);
+                              }}
+                              className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 cursor-pointer transition-colors group"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                                  <Home className="h-5 w-5 text-blue-600" />
+                                </div>
+                                <div>
+                                  <h3 className="font-semibold text-slate-900">{building.name}</h3>
+                                  {building.description && (
+                                    <p className="text-sm text-slate-500">{building.description}</p>
+                                  )}
+                                  <p className="text-xs text-slate-400 mt-1">{roomCount} Zimmer</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Pencil className="h-4 w-4 text-slate-400 group-hover:text-slate-600" />
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`Möchtest du "${building.name}" wirklich löschen?`)) {
+                                      setBuildings(buildings.filter(b => b.id !== building.id));
+                                    }
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Kategorie Sub-Tab */}
+                {resourceSubTab === 'kategorie' && (
+                  <div className="space-y-4">
+                    {/* Action Buttons */}
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedPricingCategory(categories[0]?.id || null);
+                          setPricingFullscreenOpen(true);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                      >
+                        <Euro className="h-4 w-4" />
+                        Preise
+                      </button>
                       <button
                         onClick={() => openCategoryDrawer()}
                         className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
@@ -1688,7 +1895,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                             {/* Rooms */}
                             {category.rooms.length > 0 && (
                               <div className="p-4">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                <div className="space-y-2">
                                   {category.rooms.map((room) => (
                                     <div
                                       key={room.id}
@@ -1717,206 +1924,6 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                   </div>
                 )}
 
-                {/* Preise Sub-Tab - Kategorien mit Saisonen */}
-                {resourceSubTab === 'preise' && (
-                  <div className="space-y-4">
-                    {categories.length === 0 ? (
-                      <div className="py-12 text-center">
-                        <Euro className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                        <p className="text-slate-500">Erstelle zuerst Kategorien</p>
-                        <p className="text-sm text-slate-400 mt-1">Gehe zum Kategorie-Tab um Zimmerkategorien anzulegen</p>
-                      </div>
-                    ) : (
-                      <>
-                        {/* Category Tabs */}
-                        <div className="flex gap-2 overflow-x-auto pb-2">
-                          {categories.map((category) => {
-                            const categorySeasons = seasons.filter(s => s.categoryId === category.id);
-                            return (
-                              <button
-                                key={category.id}
-                                onClick={() => setSelectedPriceCategory(selectedPriceCategory === category.id ? null : category.id)}
-                                className={`flex-shrink-0 px-4 py-2 rounded-lg font-medium transition-all ${
-                                  selectedPriceCategory === category.id
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                                }`}
-                              >
-                                <span>{category.name}</span>
-                                <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${
-                                  selectedPriceCategory === category.id
-                                    ? 'bg-blue-500 text-white'
-                                    : 'bg-slate-200 text-slate-600'
-                                }`}>
-                                  {categorySeasons.length}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Selected Category Content */}
-                        {selectedPriceCategory ? (
-                          <div className="space-y-4">
-                            {/* Category Header */}
-                            {(() => {
-                              const category = categories.find(c => c.id === selectedPriceCategory);
-                              const categorySeasons = seasons.filter(s => s.categoryId === selectedPriceCategory);
-                              return category ? (
-                                <>
-                                  <div className="flex items-center justify-between">
-                                    <div>
-                                      <h3 className="font-semibold text-slate-900">{category.name}</h3>
-                                      <p className="text-sm text-slate-500">{categorySeasons.length} Saison(en) definiert</p>
-                                    </div>
-                                    <button
-                                      onClick={() => openSeasonDrawer(selectedPriceCategory)}
-                                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                                    >
-                                      <Plus className="h-4 w-4" />
-                                      Saison hinzufügen
-                                    </button>
-                                  </div>
-
-                                  {/* Seasons for this Category */}
-                                  {categorySeasons.length === 0 ? (
-                                    <div className="py-12 text-center bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
-                                      <Euro className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                                      <p className="text-slate-500">Noch keine Saisonen für diese Kategorie</p>
-                                      <p className="text-sm text-slate-400 mt-1">Füge Saisons mit unterschiedlichen Preisen hinzu</p>
-                                      <button
-                                        onClick={() => openSeasonDrawer(selectedPriceCategory)}
-                                        className="mt-4 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors text-sm font-medium"
-                                      >
-                                        Erste Saison erstellen
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <div className="overflow-x-auto -mx-6 px-6">
-                                      <div className="flex gap-4 min-w-fit pb-4">
-                                        {categorySeasons.map((season) => (
-                                          <div key={season.id} className="w-80 flex-shrink-0 bg-slate-50 rounded-xl overflow-hidden">
-                                            {/* Season Header */}
-                                            <div className="p-4 border-b border-slate-200 bg-slate-100">
-                                              <div
-                                                className="cursor-pointer hover:bg-slate-200 -m-2 p-2 rounded-lg transition-colors"
-                                                onClick={() => openSeasonDrawer(selectedPriceCategory, season)}
-                                              >
-                                                <div className="flex items-center gap-2">
-                                                  <h3 className="font-semibold text-slate-900">{season.name}</h3>
-                                                  <Pencil className="h-3.5 w-3.5 text-slate-400" />
-                                                </div>
-                                                <p className="text-xs text-slate-500 mt-1">
-                                                  {new Date(season.startDate).toLocaleDateString('de-DE')} - {new Date(season.endDate).toLocaleDateString('de-DE')}
-                                                </p>
-                                              </div>
-                                              <div className="flex items-center gap-2 mt-3">
-                                                <button
-                                                  onClick={() => openRateDrawer(season.id)}
-                                                  className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 border border-blue-600 text-blue-600 rounded-lg text-sm hover:bg-blue-50 transition-colors"
-                                                >
-                                                  <Plus className="h-4 w-4" />
-                                                  Rate
-                                                </button>
-                                                <button
-                                                  onClick={() => handleDeleteSeason(season.id)}
-                                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                >
-                                                  <Trash2 className="h-4 w-4" />
-                                                </button>
-                                              </div>
-                                            </div>
-
-                                            {/* Rates */}
-                                            <div className="p-4 space-y-3">
-                                              {season.rates.length === 0 ? (
-                                                <p className="text-sm text-slate-400 text-center py-4">Keine Raten</p>
-                                              ) : (
-                                                season.rates.map((rate) => (
-                                                  <div
-                                                    key={rate.id}
-                                                    className="group p-4 bg-white rounded-lg border border-slate-200"
-                                                  >
-                                                    <div className="flex items-start justify-between mb-3">
-                                                      <div>
-                                                        <div className="font-medium text-slate-900">{rate.name}</div>
-                                                        <div className="text-xs text-slate-500">
-                                                          {rate.minNights}-{rate.maxNights || '∞'} Nächte
-                                                        </div>
-                                                      </div>
-                                                      <div className="flex items-center gap-1">
-                                                        <button
-                                                          onClick={(e) => { e.stopPropagation(); openRateDrawer(season.id, rate); }}
-                                                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                                          title="Bearbeiten"
-                                                        >
-                                                          <Pencil className="h-4 w-4" />
-                                                        </button>
-                                                        <button
-                                                          onClick={(e) => { e.stopPropagation(); handleDeleteRateClick(season.id, rate); }}
-                                                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                                                          title="Löschen"
-                                                        >
-                                                          <Trash2 className="h-4 w-4" />
-                                                        </button>
-                                                      </div>
-                                                    </div>
-                                                    {/* Prices */}
-                                                    <div className="space-y-1 text-sm">
-                                                      <div className="flex items-center justify-between py-1.5 px-2 bg-blue-50 rounded">
-                                                        <span className="text-slate-600 font-medium">Erwachsene</span>
-                                                        <span className="font-bold text-blue-700">EUR {rate.pricePerAdult.toFixed(2)}</span>
-                                                      </div>
-                                                      {rate.childPrices?.map((cp, idx) => {
-                                                        const calculatedPrice = (rate.pricePerAdult * cp.percentage / 100).toFixed(2);
-                                                        return (
-                                                          <div key={idx} className="flex items-center justify-between py-1.5 px-2 bg-green-50 rounded">
-                                                            <span className="text-slate-600">Kind {cp.ageFrom}-{cp.ageTo}J</span>
-                                                            <div className="text-right">
-                                                              <span className="font-medium text-green-700">EUR {calculatedPrice}</span>
-                                                              <span className="text-xs text-slate-400 ml-1">({cp.percentage}%)</span>
-                                                            </div>
-                                                          </div>
-                                                        );
-                                                      })}
-                                                      {rate.infantPrices?.map((ip, idx) => {
-                                                        const calculatedPrice = (rate.pricePerAdult * ip.percentage / 100).toFixed(2);
-                                                        return (
-                                                          <div key={idx} className="flex items-center justify-between py-1.5 px-2 bg-purple-50 rounded">
-                                                            <span className="text-slate-600">Baby {ip.ageFrom}-{ip.ageTo}J</span>
-                                                            <div className="text-right">
-                                                              <span className="font-medium text-purple-700">EUR {calculatedPrice}</span>
-                                                              <span className="text-xs text-slate-400 ml-1">({ip.percentage}%)</span>
-                                                            </div>
-                                                          </div>
-                                                        );
-                                                      })}
-                                                    </div>
-                                                  </div>
-                                                ))
-                                              )}
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </>
-                              ) : null;
-                            })()}
-                          </div>
-                        ) : (
-                          <div className="py-12 text-center bg-slate-50 rounded-xl">
-                            <Bed className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                            <p className="text-slate-500 font-medium">Wähle eine Kategorie</p>
-                            <p className="text-sm text-slate-400 mt-1">Klicke auf eine Zimmerkategorie um Saisons und Preise zu bearbeiten</p>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-
                 {/* Artikel Sub-Tab */}
                 {resourceSubTab === 'artikel' && (
                   <div className="space-y-4">
@@ -1928,7 +1935,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                       </div>
                       <button
                         onClick={() => openArticleDrawer()}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
                       >
                         <Plus className="h-4 w-4" />
                         Artikel erstellen
@@ -2091,12 +2098,12 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
             </div>
 
             {/* Sub-Tabs */}
-            <div className="flex gap-2 border-b border-slate-200 pb-4">
+            <div className="flex gap-2 border-b border-slate-200 pb-4 overflow-x-auto">
               <button
                 onClick={() => setCommunicationSubTab('whatsapp')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
                   communicationSubTab === 'whatsapp'
-                    ? 'bg-green-100 text-green-700'
+                    ? 'bg-blue-100 text-blue-700'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
@@ -2105,7 +2112,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
               </button>
               <button
                 onClick={() => setCommunicationSubTab('email')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
                   communicationSubTab === 'email'
                     ? 'bg-blue-100 text-blue-700'
                     : 'text-slate-600 hover:bg-slate-100'
@@ -2113,6 +2120,39 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
               >
                 <Mail className="h-4 w-4" />
                 E-Mail
+              </button>
+              <button
+                onClick={() => setCommunicationSubTab('email-template')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
+                  communicationSubTab === 'email-template'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <FileText className="h-4 w-4" />
+                E-Mail Template
+              </button>
+              <button
+                onClick={() => setCommunicationSubTab('email-import')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
+                  communicationSubTab === 'email-import'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <Download className="h-4 w-4" />
+                E-Mail Import
+              </button>
+              <button
+                onClick={() => setCommunicationSubTab('public-pages')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
+                  communicationSubTab === 'public-pages'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <Globe className="h-4 w-4" />
+                Öffentliche Seiten
               </button>
             </div>
 
@@ -2135,7 +2175,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                     <button
                       onClick={checkWhatsAppStatus}
                       disabled={whatsappLoading}
-                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                      className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50"
                     >
                       {whatsappLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -2214,6 +2254,138 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                     </div>
                     <p className="text-slate-500">E-Mail-Einstellungen werden über Firebase verwaltet.</p>
                     <p className="text-sm text-slate-400 mt-2">Angebote und Buchungsbestätigungen werden automatisch versendet.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Email Template Sub-Tab */}
+            {communicationSubTab === 'email-template' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl border border-slate-200 p-6">
+                  <h3 className="font-semibold text-slate-900 mb-4">E-Mail Template</h3>
+                  <p className="text-sm text-slate-500 mb-6">Gestalten Sie das Aussehen Ihrer E-Mails mit Header, Logo und automatischer Footer-Zeile.</p>
+
+                  {/* Header Upload */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Header-Bild</label>
+                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:border-blue-300 transition-colors cursor-pointer">
+                      <Image className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                      <p className="text-slate-600 font-medium">Klicken zum Hochladen</p>
+                      <p className="text-sm text-slate-400 mt-1">PNG, JPG bis 2MB, empfohlen 600x150px</p>
+                    </div>
+                  </div>
+
+                  {/* Logo Upload */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Logo</label>
+                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:border-blue-300 transition-colors cursor-pointer">
+                      <Image className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                      <p className="text-slate-600 font-medium">Klicken zum Hochladen</p>
+                      <p className="text-sm text-slate-400 mt-1">PNG, JPG bis 1MB, empfohlen 200x200px</p>
+                    </div>
+                  </div>
+
+                  {/* Footer Preview */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Footer-Zeile (automatisch)</label>
+                    <div className="bg-slate-50 rounded-xl p-4 text-center text-sm text-slate-600">
+                      <p className="font-medium">{hotelInfo.name || 'Hotel Name'}</p>
+                      <p>{hotelInfo.street || 'Straße'}, {hotelInfo.city || 'Ort'}</p>
+                      <p>{hotelInfo.email || 'email@hotel.at'} | {hotelInfo.phone || 'Telefon'}</p>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-2">Die Footer-Daten werden aus den Basic-Einstellungen übernommen.</p>
+                  </div>
+                </div>
+
+                <button className="w-full py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-medium">
+                  Template speichern
+                </button>
+              </div>
+            )}
+
+            {/* Email Import Sub-Tab */}
+            {communicationSubTab === 'email-import' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl border border-slate-200 p-6">
+                  <h3 className="font-semibold text-slate-900 mb-4">E-Mail Import</h3>
+                  <p className="text-sm text-slate-500 mb-6">Verbinden Sie einen Gmail-Ordner um E-Mail-Anfragen automatisch zu importieren und als neue Anfragen anzulegen.</p>
+
+                  {/* Gmail Connection Status */}
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-lg bg-slate-200 flex items-center justify-center">
+                        <Mail className="h-5 w-5 text-slate-500" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-900">Gmail Konto</p>
+                        <p className="text-sm text-slate-500">Nicht verbunden</p>
+                      </div>
+                    </div>
+                    <button className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium">
+                      Verbinden
+                    </button>
+                  </div>
+
+                  {/* Folder Selection */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Ordner auswählen</label>
+                    <select className="w-full px-4 py-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-600">
+                      <option>Zuerst Gmail verbinden...</option>
+                    </select>
+                    <p className="text-xs text-slate-400 mt-2">E-Mails aus diesem Ordner werden als neue Anfragen importiert.</p>
+                  </div>
+
+                  {/* How it works */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <h4 className="font-medium text-blue-900 mb-2">So funktioniert der Import:</h4>
+                    <ul className="text-sm text-blue-800 space-y-1">
+                      <li>• Neue E-Mails werden automatisch als Anfrage angelegt</li>
+                      <li>• Falls der Gast nicht existiert, wird ein neuer CDS erstellt</li>
+                      <li>• Die Anfrage wird dem Gast zugeordnet</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Public Pages Sub-Tab */}
+            {communicationSubTab === 'public-pages' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl border border-slate-200 p-6">
+                  <h3 className="font-semibold text-slate-900 mb-4">Öffentliche Seiten</h3>
+                  <p className="text-sm text-slate-500 mb-6">Verwalten Sie Lead-Formulare und Online-Angebote.</p>
+
+                  {/* Lead Formular */}
+                  <div className="p-4 bg-slate-50 rounded-xl mb-4 hover:bg-slate-100 transition-colors cursor-pointer">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                          <FileText className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900">Lead-Formular</p>
+                          <p className="text-sm text-slate-500">Aus Offer Office generierte Formulare</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-slate-400" />
+                    </div>
+                  </div>
+
+                  {/* Online Angebot */}
+                  <div className="p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
+                          <Globe className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900">Online Angebot</p>
+                          <p className="text-sm text-slate-500">Öffentliche Angebotsseiten für Gäste</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-slate-400" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2478,7 +2650,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                   </div>
                   <button
                     disabled={!agent.apiKey}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Testen
                   </button>
@@ -2655,7 +2827,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                                   }
                                 }}
                                 disabled={step.number === 3 && bridgeDownloading}
-                                className="mt-2 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:opacity-50"
+                                className="mt-2 flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm disabled:opacity-50"
                               >
                                 {step.number === 3 && bridgeDownloading ? (
                                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -2682,7 +2854,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                       <button
                         onClick={loadCaphotelData}
                         disabled={bridgeLoading}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:opacity-50"
+                        className="flex items-center gap-2 px-3 py-1.5 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm disabled:opacity-50"
                       >
                         {bridgeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                         Daten laden
@@ -2771,7 +2943,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                       <button
                         onClick={loadCaphotelData}
                         disabled={bridgeLoading}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:opacity-50"
+                        className="flex items-center gap-2 px-3 py-1.5 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm disabled:opacity-50"
                       >
                         {bridgeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                         Daten laden
@@ -2865,7 +3037,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                         <button
                           onClick={performSync}
                           disabled={syncStatus.syncInProgress}
-                          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                          className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50"
                         >
                           {syncStatus.syncInProgress ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -3043,6 +3215,14 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                 Grunddaten
               </button>
               <button
+                onClick={() => setRoomDrawerPage(4)}
+                className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  roomDrawerPage === 4 ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500'
+                }`}
+              >
+                Lage
+              </button>
+              <button
                 onClick={() => setRoomDrawerPage(2)}
                 className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
                   roomDrawerPage === 2 ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500'
@@ -3162,10 +3342,52 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
 
                   {FEATURE_CATEGORIES.map((category) => {
                     const categoryFeatures = AVAILABLE_FEATURES.filter(f => f.category === category.id);
+                    const customCategoryFeatures = (newRoom.customFeatures || []).filter(f => f.category === category.id);
                     return (
                       <div key={category.id}>
-                        <h4 className="text-sm font-medium text-slate-700 mb-3">{category.name}</h4>
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-medium text-slate-700">{category.name}</h4>
+                          <button
+                            type="button"
+                            onClick={() => setAddingCustomFeature(category.id)}
+                            className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            title="Eigenes Merkmal hinzufügen"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Custom feature input */}
+                        {addingCustomFeature === category.id && (
+                          <div className="flex gap-2 mb-3">
+                            <input
+                              type="text"
+                              value={customFeatureName}
+                              onChange={(e) => setCustomFeatureName(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleAddCustomFeature()}
+                              placeholder="Neues Merkmal eingeben..."
+                              className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={handleAddCustomFeature}
+                              className="px-3 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 text-sm"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setAddingCustomFeature(null); setCustomFeatureName(''); }}
+                              className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 text-sm"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-2 gap-2">
+                          {/* Standard features */}
                           {categoryFeatures.map((feature) => {
                             const isSelected = (newRoom.features || []).includes(feature.id);
                             return (
@@ -3205,6 +3427,28 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                               </button>
                             );
                           })}
+
+                          {/* Custom features for this category */}
+                          {customCategoryFeatures.map((feature) => (
+                            <div
+                              key={feature.id}
+                              className="p-3 rounded-lg text-left text-sm border bg-green-50 border-green-300 text-green-700 flex items-center justify-between"
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className="w-4 h-4 rounded border-2 flex items-center justify-center bg-green-600 border-green-600">
+                                  <Check className="w-3 h-3 text-white" />
+                                </div>
+                                {feature.name}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveCustomFeature(feature.id)}
+                                className="p-1 text-green-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     );
@@ -3213,11 +3457,16 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                   {/* Selected Count */}
                   <div className="p-3 bg-blue-50 rounded-lg text-center">
                     <p className="text-sm text-blue-700">
-                      {(newRoom.features || []).length} Ausstattungsmerkmale ausgewählt
+                      {(newRoom.features || []).length + (newRoom.customFeatures || []).length} Ausstattungsmerkmale ausgewählt
+                      {(newRoom.customFeatures || []).length > 0 && (
+                        <span className="text-green-600 ml-1">
+                          ({(newRoom.customFeatures || []).length} individuell)
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
-              ) : (
+              ) : roomDrawerPage === 3 ? (
                 /* Medien Tab */
                 <div className="space-y-6">
                   <div>
@@ -3261,7 +3510,95 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                     </div>
                   </div>
                 </div>
-              )}
+              ) : roomDrawerPage === 4 ? (
+                /* Lage Tab */
+                <div className="space-y-6">
+                  <p className="text-sm text-slate-500 mb-4">
+                    Ordne dieses Zimmer einem Haus/Gebäude zu.
+                  </p>
+
+                  {buildings.length === 0 ? (
+                    <div className="py-8 text-center bg-slate-50 rounded-xl">
+                      <Home className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+                      <p className="text-slate-500">Keine Häuser/Gebäude vorhanden</p>
+                      <p className="text-sm text-slate-400 mt-1">
+                        Erstelle zuerst Gebäude im Lage-Tab
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* Option: Kein Gebäude */}
+                      <button
+                        type="button"
+                        onClick={() => setNewRoom({ ...newRoom, buildingId: undefined })}
+                        className={`w-full p-4 rounded-lg text-left transition-all border ${
+                          !newRoom.buildingId
+                            ? 'bg-blue-50 border-blue-300 text-blue-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
+                            !newRoom.buildingId ? 'bg-blue-100' : 'bg-slate-200'
+                          }`}>
+                            <Home className={`h-5 w-5 ${!newRoom.buildingId ? 'text-blue-600' : 'text-slate-400'}`} />
+                          </div>
+                          <div>
+                            <div className="font-medium">Kein Gebäude</div>
+                            <div className="text-sm opacity-70">Zimmer keinem Gebäude zuordnen</div>
+                          </div>
+                          {!newRoom.buildingId && (
+                            <Check className="h-5 w-5 text-blue-600 ml-auto" />
+                          )}
+                        </div>
+                      </button>
+
+                      {/* Gebäude-Liste */}
+                      {buildings.map((building) => {
+                        const isSelected = newRoom.buildingId === building.id;
+                        return (
+                          <button
+                            key={building.id}
+                            type="button"
+                            onClick={() => setNewRoom({ ...newRoom, buildingId: building.id })}
+                            className={`w-full p-4 rounded-lg text-left transition-all border ${
+                              isSelected
+                                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
+                                isSelected ? 'bg-blue-100' : 'bg-slate-200'
+                              }`}>
+                                <Home className={`h-5 w-5 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`} />
+                              </div>
+                              <div>
+                                <div className="font-medium">{building.name}</div>
+                                {building.description && (
+                                  <div className="text-sm opacity-70">{building.description}</div>
+                                )}
+                              </div>
+                              {isSelected && (
+                                <Check className="h-5 w-5 text-blue-600 ml-auto" />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Current Selection */}
+                  {newRoom.buildingId && (
+                    <div className="p-3 bg-blue-50 rounded-lg text-center">
+                      <p className="text-sm text-blue-700">
+                        Zugeordnet: <strong>{buildings.find(b => b.id === newRoom.buildingId)?.name}</strong>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <div className="p-6 border-t border-slate-200 bg-white">
@@ -3282,8 +3619,8 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
       {/* Season Drawer with Calendar */}
       {seasonDrawerOpen && (
         <>
-          <div className="fixed inset-0 bg-black/20 z-[60]" onClick={() => setSeasonDrawerOpen(false)} />
-          <div className="fixed top-0 right-0 h-full w-full max-w-lg bg-white shadow-2xl z-[70] flex flex-col">
+          <div className="fixed inset-0 bg-black/20 z-[120]" onClick={() => setSeasonDrawerOpen(false)} />
+          <div className="fixed top-0 right-0 h-full w-full max-w-lg bg-white shadow-2xl z-[130] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
               <h2 className="text-lg font-semibold text-slate-900">
                 {editingSeason ? 'Saison bearbeiten' : 'Neue Saison'}
@@ -3426,8 +3763,8 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
       {/* Rate Drawer - mit Prozent-Eingabe */}
       {rateDrawerOpen && (
         <>
-          <div className="fixed inset-0 bg-black/20 z-[80]" onClick={() => { setRateDrawerOpen(false); setEditingRate(null); }} />
-          <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-[90] flex flex-col">
+          <div className="fixed inset-0 bg-black/20 z-[140]" onClick={() => { setRateDrawerOpen(false); setEditingRate(null); }} />
+          <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-[150] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
               <h2 className="text-lg font-semibold text-slate-900">
                 {editingRate ? 'Rate bearbeiten' : 'Neue Rate'}
@@ -3653,7 +3990,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
               <button
                 onClick={handleSaveRate}
                 disabled={!newRate.name.trim() || !newRate.pricePerAdult}
-                className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                className="w-full py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
               >
                 {editingRate ? 'Änderungen speichern' : 'Rate erstellen'}
               </button>
@@ -3697,7 +4034,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
             <div className="p-6 border-t border-slate-200 bg-white space-y-3">
               <button
                 onClick={confirmDeleteRate}
-                className="w-full py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center gap-2"
+                className="w-full py-3 border border-red-600 text-red-600 rounded-lg hover:bg-red-50 transition-colors font-medium flex items-center justify-center gap-2"
               >
                 <Trash2 className="h-5 w-5" />
                 Ja, Rate löschen
@@ -3993,7 +4330,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
               <button
                 onClick={handleSaveArticle}
                 disabled={!newArticle.name?.trim()}
-                className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                className="w-full py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
               >
                 {editingArticle ? 'Änderungen speichern' : 'Artikel erstellen'}
               </button>
@@ -4037,7 +4374,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
             <div className="p-6 border-t border-slate-200 bg-white space-y-3">
               <button
                 onClick={confirmDeleteArticle}
-                className="w-full py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center gap-2"
+                className="w-full py-3 border border-red-600 text-red-600 rounded-lg hover:bg-red-50 transition-colors font-medium flex items-center justify-center gap-2"
               >
                 <Trash2 className="h-5 w-5" />
                 Ja, Artikel löschen
@@ -4047,6 +4384,212 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                 className="w-full py-3 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium"
               >
                 Abbrechen
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Fullscreen Pricing Drawer */}
+      {pricingFullscreenOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-[100]" onClick={() => setPricingFullscreenOpen(false)} />
+          <div className="fixed top-0 right-0 h-full w-full bg-white shadow-2xl z-[110] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-white">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Preise & Saisonen</h2>
+                <p className="text-slate-500 text-sm">Alle Zimmer und Preise im Überblick</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => openSeasonDrawer(categories[0]?.id)}
+                  className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  Saison hinzufügen
+                </button>
+                <button
+                  onClick={() => setPricingFullscreenOpen(false)}
+                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content - All rooms in a list */}
+            <div className="flex-1 overflow-auto p-6">
+              {categories.length === 0 ? (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-center">
+                    <Bed className="h-16 w-16 text-slate-200 mx-auto mb-4" />
+                    <p className="text-slate-500 font-medium">Keine Kategorien vorhanden</p>
+                    <p className="text-sm text-slate-400 mt-1">Erstelle zuerst Kategorien und Zimmer</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {categories.map((category) => {
+                    const categorySeasons = seasons.filter(s => s.categoryId === category.id);
+                    return (
+                      <div key={category.id} className="border border-slate-200 rounded-xl overflow-hidden">
+                        {/* Category Header */}
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                              <Bed className="h-5 w-5 text-blue-600" />
+                            </div>
+                            <div>
+                              <h3 className="font-semibold text-slate-900">{category.name}</h3>
+                              <p className="text-sm text-slate-500">{category.rooms.length} Zimmer • {categorySeasons.length} Saison(en)</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => openSeasonDrawer(category.id)}
+                            className="flex items-center gap-2 px-3 py-1.5 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm"
+                          >
+                            <Plus className="h-4 w-4" />
+                            Saison
+                          </button>
+                        </div>
+
+                        {/* Rooms List */}
+                        <div className="divide-y divide-slate-100">
+                          {category.rooms.length === 0 ? (
+                            <div className="p-6 text-center text-slate-400 text-sm">
+                              Keine Zimmer in dieser Kategorie
+                            </div>
+                          ) : (
+                            category.rooms.map((room) => (
+                              <div key={room.id} className="p-4 hover:bg-slate-50 transition-colors">
+                                <div className="flex items-start gap-4">
+                                  {/* Room Info */}
+                                  <div className="min-w-[160px]">
+                                    <div className="font-medium text-slate-900">{room.number || room.name}</div>
+                                    {room.number && room.name && room.name !== room.number && (
+                                      <div className="text-sm text-slate-500">{room.name}</div>
+                                    )}
+                                  </div>
+
+                                  {/* Seasons with Prices */}
+                                  <div className="flex-1 flex flex-wrap gap-3">
+                                    {categorySeasons.length === 0 ? (
+                                      <span className="text-sm text-slate-400">Keine Saisonen definiert</span>
+                                    ) : (
+                                      categorySeasons.map((season) => (
+                                        <div
+                                          key={season.id}
+                                          onClick={() => openSeasonDrawer(category.id, season)}
+                                          className="bg-white border border-slate-200 rounded-lg p-3 min-w-[180px] cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all"
+                                        >
+                                          <div className="flex items-center justify-between mb-2">
+                                            <span className="font-medium text-slate-700 text-sm">{season.name}</span>
+                                            <Pencil className="h-3 w-3 text-slate-300" />
+                                          </div>
+                                          <div className="text-xs text-slate-400 mb-2">
+                                            {new Date(season.startDate).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' })} - {new Date(season.endDate).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' })}
+                                          </div>
+                                          {season.rates.length > 0 ? (
+                                            <div className="space-y-1">
+                                              {season.rates.slice(0, 2).map((rate) => (
+                                                <div key={rate.id} className="flex items-center justify-between text-sm">
+                                                  <span className="text-slate-500 truncate">{rate.name}</span>
+                                                  <span className="font-semibold text-blue-600">€{rate.pricePerAdult.toFixed(0)}</span>
+                                                </div>
+                                              ))}
+                                              {season.rates.length > 2 && (
+                                                <div className="text-xs text-slate-400">+{season.rates.length - 2} weitere</div>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <div className="text-xs text-slate-400">Keine Raten</div>
+                                          )}
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Building Drawer */}
+      {buildingDrawerOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-[60]" onClick={() => setBuildingDrawerOpen(false)} />
+          <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-[70] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {editingBuilding ? 'Haus/Gebäude bearbeiten' : 'Neues Haus/Gebäude'}
+              </h2>
+              <button
+                onClick={() => setBuildingDrawerOpen(false)}
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-6 space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Name *</label>
+                <input
+                  type="text"
+                  value={newBuilding.name}
+                  onChange={(e) => setNewBuilding({ ...newBuilding, name: e.target.value })}
+                  placeholder="z.B. Haupthaus, Nebengebäude..."
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Beschreibung</label>
+                <textarea
+                  value={newBuilding.description}
+                  onChange={(e) => setNewBuilding({ ...newBuilding, description: e.target.value })}
+                  placeholder="Optionale Beschreibung..."
+                  rows={3}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-200 bg-white">
+              <button
+                onClick={() => {
+                  if (!newBuilding.name.trim()) return;
+
+                  if (editingBuilding) {
+                    setBuildings(buildings.map(b =>
+                      b.id === editingBuilding.id
+                        ? { ...b, name: newBuilding.name, description: newBuilding.description }
+                        : b
+                    ));
+                  } else {
+                    const building: Building = {
+                      id: `building-${Date.now()}`,
+                      name: newBuilding.name,
+                      description: newBuilding.description || undefined
+                    };
+                    setBuildings([...buildings, building]);
+                  }
+                  setBuildingDrawerOpen(false);
+                }}
+                disabled={!newBuilding.name.trim()}
+                className="w-full py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {editingBuilding ? 'Speichern' : 'Haus/Gebäude erstellen'}
               </button>
             </div>
           </div>

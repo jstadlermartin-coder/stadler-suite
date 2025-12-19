@@ -37,7 +37,16 @@ export interface Room {
   number: string;
   name: string;
   description: string;
+  buildingId?: string; // Welches Gebäude/Haus
+  buildingName?: string; // Cached building name für Sortierung
   occupancies: Occupancy[];
+}
+
+export interface Building {
+  id: string;
+  name: string;
+  description?: string;
+  sortOrder?: number;
 }
 
 export interface Category {
@@ -153,6 +162,33 @@ export async function saveCategories(categories: Category[]): Promise<boolean> {
     return true;
   } catch (error) {
     console.error('Error saving categories:', error);
+    return false;
+  }
+}
+
+// ============ BUILDINGS ============
+
+export async function getBuildings(): Promise<Building[]> {
+  try {
+    const docRef = doc(db, 'settings', 'buildings');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data().items as Building[];
+    }
+    return [];
+  } catch (error) {
+    console.error('Error getting buildings:', error);
+    return [];
+  }
+}
+
+export async function saveBuildings(buildings: Building[]): Promise<boolean> {
+  try {
+    const docRef = doc(db, 'settings', 'buildings');
+    await setDoc(docRef, { items: buildings, updatedAt: new Date().toISOString() });
+    return true;
+  } catch (error) {
+    console.error('Error saving buildings:', error);
     return false;
   }
 }

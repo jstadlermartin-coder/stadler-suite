@@ -3,12 +3,15 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { useBookingWizard } from '@/components/booking/NewBookingWizard';
-import { getBookings, getCategories, Booking, Category } from '@/lib/firestore';
+import { getBookings, getCategories, getBuildings, Booking, Category, Building } from '@/lib/firestore';
 
 interface DisplayRoom {
   id: string;
   name: string;
   category: string;
+  buildingId?: string;
+  buildingName?: string;
+  buildingOrder?: number;
 }
 
 interface DisplayBooking {
@@ -100,21 +103,46 @@ export default function CalendarPage() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [categoriesData, bookingsData] = await Promise.all([
+        const [categoriesData, bookingsData, buildingsData] = await Promise.all([
           getCategories(),
-          getBookings()
+          getBookings(),
+          getBuildings()
         ]);
+
+        // Create building lookup map
+        const buildingMap = new Map<string, Building>();
+        buildingsData.forEach((b: Building) => buildingMap.set(b.id, b));
 
         // Build rooms list from categories
         const roomsList: DisplayRoom[] = [];
         categoriesData.forEach((cat: Category) => {
           cat.rooms?.forEach(room => {
+            const building = room.buildingId ? buildingMap.get(room.buildingId) : undefined;
             roomsList.push({
               id: room.id,
               name: room.number || room.name,
-              category: cat.name
+              category: cat.name,
+              buildingId: room.buildingId,
+              buildingName: building?.name || room.buildingName,
+              buildingOrder: building?.sortOrder ?? 999
             });
           });
+        });
+
+        // Sort rooms: first by building order, then alphabetically by room name/number
+        roomsList.sort((a, b) => {
+          // First sort by building order (rooms without building come last)
+          const orderA = a.buildingOrder ?? 999;
+          const orderB = b.buildingOrder ?? 999;
+          if (orderA !== orderB) return orderA - orderB;
+
+          // Then by building name
+          const buildingNameA = a.buildingName || 'zzz';
+          const buildingNameB = b.buildingName || 'zzz';
+          if (buildingNameA !== buildingNameB) return buildingNameA.localeCompare(buildingNameB, 'de');
+
+          // Finally by room number/name (natural sort for numbers)
+          return a.name.localeCompare(b.name, 'de', { numeric: true });
         });
 
         // If no rooms in settings, show placeholder
@@ -523,18 +551,19 @@ export default function CalendarPage() {
             <div className="text-slate-500">Laden...</div>
           </div>
         ) : (
-          <div className="overflow-x-auto h-full">
-            <table className="w-full border-collapse min-w-max">
+          <div className="overflow-auto h-full" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
+            <table className="w-full border-collapse table-fixed">
               {/* Header */}
               <thead>
                 <tr className="bg-slate-50">
-                  <th className="sticky left-0 z-10 bg-slate-50 border-b border-r border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-700 min-w-[140px]">
+                  <th className="sticky left-0 z-10 bg-slate-50 border-b border-r border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-700 w-[140px]">
                     Zimmer
                   </th>
                   {dates.map((date, index) => (
                     <th
                       key={index}
-                      className={`border-b border-slate-200 px-2 py-2 text-center min-w-[70px] ${
+                      className={`border-b border-slate-200 px-1 py-2 text-center ${
                         isWeekend(date) ? 'bg-slate-100' : ''
                       } ${isToday(date) ? 'bg-blue-500 text-white' : ''}`}
                     >
@@ -553,7 +582,9 @@ export default function CalendarPage() {
                   <tr key={room.id} className="group">
                     <td className="sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-b border-r border-slate-200 px-4 py-2">
                       <div className="font-medium text-slate-900 text-sm">{room.name}</div>
-                      <div className="text-xs text-slate-500">{room.category}</div>
+                      <div className="text-xs text-slate-500">
+                        {room.buildingName ? `${room.buildingName} · ${room.category}` : room.category}
+                      </div>
                     </td>
                     {dates.map((date, dateIndex) => {
                       const booking = getBookingForRoomAndDate(room.id, date);
