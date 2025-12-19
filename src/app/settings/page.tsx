@@ -9,6 +9,11 @@ import {
   saveSeasons,
   getBuildings,
   saveBuildings,
+  getLeadLinks,
+  addLeadLink,
+  deleteLeadLink,
+  LeadLink,
+  LeadLinkField,
   getBridgeMappings,
   saveBridgeConfig,
   saveRoomMappings,
@@ -82,7 +87,10 @@ import {
   Phone,
   Mail,
   Home,
-  User
+  User,
+  Calendar,
+  Users,
+  Copy
 } from 'lucide-react';
 
 // Types
@@ -294,6 +302,23 @@ export default function SettingsPage() {
   const [communicationSubTab, setCommunicationSubTab] = useState<'whatsapp' | 'email' | 'email-template' | 'email-import' | 'public-pages'>('whatsapp');
   const [bridgeStatus, setBridgeStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
 
+  // Lead Links State
+  const [leadLinksDrawerOpen, setLeadLinksDrawerOpen] = useState(false);
+  const [leadLinks, setLeadLinks] = useState<LeadLink[]>([]);
+  const [leadLinksLoading, setLeadLinksLoading] = useState(true);
+  const [leadLinkView, setLeadLinkView] = useState<'list' | 'create'>('list');
+  const [newLeadLinkName, setNewLeadLinkName] = useState('');
+  const [leadLinkCreating, setLeadLinkCreating] = useState(false);
+  const [leadLinkCopiedId, setLeadLinkCopiedId] = useState<string | null>(null);
+  const [leadLinkFields, setLeadLinkFields] = useState<Record<string, { enabled: boolean; required: boolean }>>({
+    name: { enabled: true, required: true },
+    email: { enabled: true, required: true },
+    phone: { enabled: true, required: false },
+    dates: { enabled: true, required: false },
+    guests: { enabled: true, required: false },
+    message: { enabled: true, required: false },
+  });
+
   // WhatsApp State & API Config
   const WHATSAPP_API_URL = 'http://146.148.3.123:3001';
   const WHATSAPP_API_KEY = 'tt_live_a8f3k2m9x7p4q1w6';
@@ -451,6 +476,11 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
         if (savedBuildings && savedBuildings.length > 0) {
           setBuildings(savedBuildings as Building[]);
         }
+
+        // Load lead links
+        const links = await getLeadLinks();
+        setLeadLinks(links);
+        setLeadLinksLoading(false);
       } catch (error) {
         console.error('Error loading settings:', error);
       } finally {
@@ -507,6 +537,52 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     } catch (error) {
       console.error('Error saving buildings:', error);
     }
+  };
+
+  // Lead Link Functions
+  const leadLinkFieldConfig: { type: LeadLinkField['type']; label: string }[] = [
+    { type: 'name', label: 'Name' },
+    { type: 'email', label: 'E-Mail' },
+    { type: 'phone', label: 'Telefon' },
+    { type: 'dates', label: 'Reisedatum' },
+    { type: 'guests', label: 'Personenanzahl' },
+    { type: 'message', label: 'Nachricht' },
+  ];
+
+  const handleCreateLeadLink = async () => {
+    if (!newLeadLinkName.trim()) return;
+    setLeadLinkCreating(true);
+
+    const selectedFields: LeadLinkField[] = leadLinkFieldConfig
+      .filter(f => leadLinkFields[f.type].enabled)
+      .map(f => ({
+        id: f.type,
+        type: f.type,
+        required: leadLinkFields[f.type].required,
+        label: f.label
+      }));
+
+    const linkId = await addLeadLink({ name: newLeadLinkName, fields: selectedFields, isActive: true });
+    if (linkId) {
+      const links = await getLeadLinks();
+      setLeadLinks(links);
+    }
+
+    setNewLeadLinkName('');
+    setLeadLinkView('list');
+    setLeadLinkCreating(false);
+  };
+
+  const handleDeleteLeadLink = async (id: string) => {
+    await deleteLeadLink(id);
+    setLeadLinks(leadLinks.filter(l => l.id !== id));
+  };
+
+  const copyLeadLink = async (id: string) => {
+    const url = `${typeof window !== 'undefined' ? window.location.origin : ''}/inquiry?id=${id}`;
+    await navigator.clipboard.writeText(url);
+    setLeadLinkCopiedId(id);
+    setTimeout(() => setLeadLinkCopiedId(null), 2000);
   };
 
   // Drawer States
@@ -2418,20 +2494,26 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                   </div>
 
                   {/* Lead Formular */}
-                  <div className="p-4 bg-slate-50 rounded-xl mb-4 hover:bg-slate-100 transition-colors cursor-pointer">
+                  <button
+                    onClick={() => {
+                      setLeadLinksDrawerOpen(true);
+                      setLeadLinkView('list');
+                    }}
+                    className="w-full p-4 bg-slate-50 rounded-xl mb-4 hover:bg-slate-100 transition-colors cursor-pointer text-left"
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                          <FileText className="h-5 w-5 text-blue-600" />
+                          <Link2 className="h-5 w-5 text-blue-600" />
                         </div>
                         <div>
-                          <p className="font-medium text-slate-900">Lead-Formular</p>
-                          <p className="text-sm text-slate-500">Aus Offer Office generierte Formulare</p>
+                          <p className="font-medium text-slate-900">Lead-Formular Links</p>
+                          <p className="text-sm text-slate-500">{leadLinks.length} Link{leadLinks.length !== 1 ? 's' : ''} erstellt</p>
                         </div>
                       </div>
                       <ChevronRight className="h-5 w-5 text-slate-400" />
                     </div>
-                  </div>
+                  </button>
                 </div>
 
                 {/* Gästeportal Info */}
@@ -4626,6 +4708,218 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                 {editingBuilding ? 'Speichern' : 'Haus/Gebäude erstellen'}
               </button>
             </div>
+          </div>
+        </>
+      )}
+
+      {/* Lead Links Drawer */}
+      {leadLinksDrawerOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-[60]" onClick={() => setLeadLinksDrawerOpen(false)} />
+          <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-[70] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                  <Link2 className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Lead-Formular Links</h2>
+                  <p className="text-sm text-slate-500">Anfrage-Links verwalten</p>
+                </div>
+              </div>
+              <button onClick={() => setLeadLinksDrawerOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-auto p-6">
+              {leadLinkView === 'list' ? (
+                <>
+                  {/* Create Button */}
+                  <button
+                    onClick={() => setLeadLinkView('create')}
+                    className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-300 rounded-xl text-slate-600 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors mb-6"
+                  >
+                    <Plus className="h-5 w-5" />
+                    Neuen Link erstellen
+                  </button>
+
+                  {/* Existing Links */}
+                  {leadLinksLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+                    </div>
+                  ) : leadLinks.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Link2 className="h-12 w-12 text-slate-200 mx-auto mb-4" />
+                      <p className="text-slate-500">Noch keine Links erstellt</p>
+                      <p className="text-sm text-slate-400 mt-1">Erstelle deinen ersten Anfrage-Link</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {leadLinks.map((link) => (
+                        <div key={link.id} className="p-4 bg-slate-50 rounded-xl">
+                          <div className="flex items-start justify-between mb-2">
+                            <div>
+                              <h3 className="font-medium text-slate-900">{link.name}</h3>
+                              <p className="text-xs text-slate-500 mt-1">
+                                {link.fields.length} Felder • Erstellt {new Date(link.createdAt).toLocaleDateString('de-DE')}
+                              </p>
+                            </div>
+                            <div className={`px-2 py-0.5 rounded-full text-xs ${link.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-500'}`}>
+                              {link.isActive ? 'Aktiv' : 'Inaktiv'}
+                            </div>
+                          </div>
+
+                          {/* Link Actions */}
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              onClick={() => copyLeadLink(link.id)}
+                              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                leadLinkCopiedId === link.id
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                              }`}
+                            >
+                              {leadLinkCopiedId === link.id ? (
+                                <>
+                                  <Check className="h-4 w-4" />
+                                  Kopiert!
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="h-4 w-4" />
+                                  Link kopieren
+                                </>
+                              )}
+                            </button>
+                            <a
+                              href={`/inquiry?id=${link.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 transition-colors"
+                            >
+                              <Globe className="h-4 w-4" />
+                            </a>
+                            <button
+                              onClick={() => handleDeleteLeadLink(link.id)}
+                              className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Create Form */}
+                  <button
+                    onClick={() => setLeadLinkView('list')}
+                    className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 mb-6"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Zurück zur Liste
+                  </button>
+
+                  <div className="space-y-6">
+                    {/* Link Name */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Link Name</label>
+                      <input
+                        type="text"
+                        value={newLeadLinkName}
+                        onChange={(e) => setNewLeadLinkName(e.target.value)}
+                        placeholder="z.B. Instagram Sommer 2025"
+                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-slate-400 mt-1">Zur internen Identifizierung</p>
+                    </div>
+
+                    {/* Field Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-3">Felder auswählen</label>
+                      <div className="space-y-2">
+                        {leadLinkFieldConfig.map((field) => (
+                          <div
+                            key={field.type}
+                            className={`p-3 rounded-xl border transition-colors ${
+                              leadLinkFields[field.type].enabled
+                                ? 'bg-blue-50 border-blue-200'
+                                : 'bg-slate-50 border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <button
+                                onClick={() => setLeadLinkFields(prev => ({
+                                  ...prev,
+                                  [field.type]: { ...prev[field.type], enabled: !prev[field.type].enabled }
+                                }))}
+                                className="flex items-center gap-3"
+                              >
+                                <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
+                                  leadLinkFields[field.type].enabled ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-400'
+                                }`}>
+                                  {field.type === 'name' && <User className="h-4 w-4" />}
+                                  {field.type === 'email' && <Mail className="h-4 w-4" />}
+                                  {field.type === 'phone' && <Phone className="h-4 w-4" />}
+                                  {field.type === 'dates' && <Calendar className="h-4 w-4" />}
+                                  {field.type === 'guests' && <Users className="h-4 w-4" />}
+                                  {field.type === 'message' && <MessageSquare className="h-4 w-4" />}
+                                </div>
+                                <span className={`font-medium ${leadLinkFields[field.type].enabled ? 'text-slate-900' : 'text-slate-400'}`}>
+                                  {field.label}
+                                </span>
+                              </button>
+
+                              {leadLinkFields[field.type].enabled && (
+                                <button
+                                  onClick={() => setLeadLinkFields(prev => ({
+                                    ...prev,
+                                    [field.type]: { ...prev[field.type], required: !prev[field.type].required }
+                                  }))}
+                                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                                    leadLinkFields[field.type].required
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+                                  }`}
+                                >
+                                  {leadLinkFields[field.type].required ? 'Pflicht' : 'Optional'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            {leadLinkView === 'create' && (
+              <div className="p-6 border-t border-slate-200 bg-white">
+                <button
+                  onClick={handleCreateLeadLink}
+                  disabled={!newLeadLinkName.trim() || leadLinkCreating || Object.values(leadLinkFields).every(f => !f.enabled)}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {leadLinkCreating ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <>
+                      <Link2 className="h-5 w-5" />
+                      Link erstellen
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}
