@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   User,
   Mail,
@@ -10,7 +10,16 @@ import {
   MessageSquare,
   FileText,
   X,
-  Send
+  Send,
+  ExternalLink,
+  Copy,
+  Check,
+  ChevronRight,
+  CalendarDays,
+  Users,
+  Euro,
+  Baby,
+  Link2
 } from 'lucide-react';
 import WhatsAppChat from '@/components/chat/WhatsAppChat';
 
@@ -38,8 +47,12 @@ export interface BookingItem {
   roomNumber?: string;
   adults: number;
   children?: number;
+  childrenAges?: number[];
   status: 'lead' | 'offer' | 'booked' | 'cancelled' | 'lost';
   createdAt?: string;
+  totalPrice?: number;
+  notes?: string;
+  selectedCategories?: string[];
 }
 
 // Status configuration
@@ -109,6 +122,12 @@ interface CustomerDetailSheetProps {
   showStatusBar?: boolean;
   // For stage display (Database mode)
   stage?: StageValue;
+  // Initial tab to open
+  initialTab?: 'info' | 'bookings' | 'inquiries' | 'communication';
+  // Callback when clicking on an inquiry card
+  onInquiryClick?: (inquiry: BookingItem) => void;
+  // Guest portal token
+  portalToken?: string;
 }
 
 export function CustomerDetailSheet({
@@ -121,11 +140,33 @@ export function CustomerDetailSheet({
   onStatusChange,
   showStatusBar = false,
   stage,
+  initialTab = 'info',
+  onInquiryClick,
+  portalToken,
 }: CustomerDetailSheetProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'bookings' | 'inquiries' | 'communication'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'bookings' | 'inquiries' | 'communication'>(initialTab);
   const [commSubTab, setCommSubTab] = useState<'whatsapp' | 'email'>('whatsapp');
+  const [portalLinkCopied, setPortalLinkCopied] = useState(false);
+
+  // Update active tab when initialTab changes
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   if (!customer) return null;
+
+  // Generate portal URL
+  const portalUrl = portalToken
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/guest-portal/${portalToken}`
+    : null;
+
+  const copyPortalLink = () => {
+    if (portalUrl) {
+      navigator.clipboard.writeText(portalUrl);
+      setPortalLinkCopied(true);
+      setTimeout(() => setPortalLinkCopied(false), 2000);
+    }
+  };
 
   // Calculate content height based on whether status bar is shown
   const contentHeight = showStatusBar ? 'h-[calc(100%-240px)]' : 'h-[calc(100%-160px)]';
@@ -158,9 +199,31 @@ export function CustomerDetailSheet({
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
-            <X className="h-5 w-5 text-slate-500" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Portal Button */}
+            {portalToken && (
+              <button
+                onClick={copyPortalLink}
+                className="flex items-center gap-2 px-3 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm"
+                title="Gästeportal-Link kopieren"
+              >
+                {portalLinkCopied ? (
+                  <>
+                    <Check className="h-4 w-4" />
+                    Kopiert!
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="h-4 w-4" />
+                    Portal
+                  </>
+                )}
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
+              <X className="h-5 w-5 text-slate-500" />
+            </button>
+          </div>
         </div>
 
         {/* Status Bar (for Offer Office mode) */}
@@ -332,28 +395,54 @@ export function CustomerDetailSheet({
                 </div>
               ) : (
                 inquiries.map((inquiry) => (
-                  <div key={inquiry.id} className="bg-slate-50 rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-slate-900">
-                        {inquiry.displayId || `#${inquiry.id}`}
-                      </span>
+                  <button
+                    key={inquiry.id}
+                    onClick={() => onInquiryClick?.(inquiry)}
+                    className="w-full bg-white border border-slate-200 rounded-xl p-4 text-left hover:shadow-md hover:border-blue-300 transition-all group"
+                  >
+                    {/* Header: Status + Date */}
+                    <div className="flex items-center justify-between mb-3">
                       <span className={`text-xs px-2 py-1 rounded-full ${statusColors[inquiry.status]}`}>
                         {statusLabels[inquiry.status]}
                       </span>
+                      <span className="text-xs text-slate-400">{inquiry.createdAt}</span>
                     </div>
-                    {(inquiry.roomName || inquiry.roomNumber) && (
-                      <p className="text-sm text-slate-600">
-                        {inquiry.roomName || `Zimmer ${inquiry.roomNumber}`}
-                      </p>
+
+                    {/* Stay Period */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <CalendarDays className="h-4 w-4 text-blue-500" />
+                      <span className="text-sm font-medium text-slate-900">
+                        {inquiry.checkIn} - {inquiry.checkOut}
+                      </span>
+                    </div>
+
+                    {/* Guests */}
+                    <div className="flex items-center gap-3 text-sm text-slate-500 mb-2">
+                      <div className="flex items-center gap-1">
+                        <Users className="h-4 w-4 text-slate-400" />
+                        <span>{inquiry.adults} Erw.</span>
+                      </div>
+                      {(inquiry.children ?? 0) > 0 && (
+                        <div className="flex items-center gap-1">
+                          <Baby className="h-4 w-4 text-slate-400" />
+                          <span>{inquiry.children} Kind.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Price */}
+                    {inquiry.totalPrice && inquiry.totalPrice > 0 && (
+                      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100">
+                        <Euro className="h-4 w-4 text-green-600" />
+                        <span className="font-semibold text-green-700">€{inquiry.totalPrice.toLocaleString('de-DE')}</span>
+                      </div>
                     )}
-                    <p className="text-sm text-slate-400">{inquiry.checkIn} - {inquiry.checkOut}</p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      {inquiry.adults} Erw.{(inquiry.children ?? 0) > 0 ? `, ${inquiry.children} Kind.` : ''}
-                    </p>
-                    {inquiry.createdAt && (
-                      <p className="text-xs text-slate-400 mt-1">Erstellt: {inquiry.createdAt}</p>
-                    )}
-                  </div>
+
+                    {/* Arrow indicator */}
+                    <div className="flex justify-end mt-2">
+                      <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-blue-500 transition-colors" />
+                    </div>
+                  </button>
                 ))
               )}
             </div>

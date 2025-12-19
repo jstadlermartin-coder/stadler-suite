@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { Plus, X, User, Calendar, Users, ChevronRight, ChevronLeft, MessageSquare, Link2, Mail, Phone, MapPin, Baby, Minus, Check, Send, Copy, Trash2, ExternalLink, Loader2, Settings, Euro, CalendarDays, UserCheck, BedDouble, Eye, EyeOff } from 'lucide-react';
-// CustomerDetailSheet import removed - using InquiryDetailDrawer instead
+import { CustomerDetailSheet, CustomerData, BookingItem } from '@/components/drawers/CustomerDetailSheet';
 import { getLeadLinks, addLeadLink, deleteLeadLink, LeadLink, LeadLinkField } from '@/lib/firestore';
 
 // Time filter type
@@ -73,7 +73,7 @@ function KanbanColumn({
       {totalValue > 0 && (
         <div className="px-2 mb-3">
           <span className="text-xs text-slate-400">Wert: </span>
-          <span className="text-sm font-medium text-slate-600">EUR {totalValue.toLocaleString('de-DE')}</span>
+          <span className="text-sm font-medium text-slate-600">€{totalValue.toLocaleString('de-DE')}</span>
         </div>
       )}
 
@@ -100,7 +100,7 @@ function KanbanColumn({
             {inquiry.totalPrice && inquiry.totalPrice > 0 ? (
               <div className="flex items-center gap-2 mb-2">
                 <Euro className="h-4 w-4 text-green-600" />
-                <span className="font-semibold text-green-700">EUR {inquiry.totalPrice.toLocaleString('de-DE')}</span>
+                <span className="font-semibold text-green-700">€{inquiry.totalPrice.toLocaleString('de-DE')}</span>
               </div>
             ) : (
               <div className="flex items-center gap-2 mb-2 text-slate-400">
@@ -540,7 +540,7 @@ function BookingWizardDrawer({
                             <p className="font-medium text-slate-900">
                               {tier.ageFrom === 0 ? 'Baby' : 'Kind'} {tier.ageFrom}-{tier.ageTo} Jahre
                             </p>
-                            <p className="text-sm text-slate-500">EUR {tier.price}/Nacht</p>
+                            <p className="text-sm text-slate-500">€{tier.price}/Nacht</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -622,7 +622,7 @@ function BookingWizardDrawer({
                             )}
                           </div>
                           <div className="text-right">
-                            <p className="font-bold text-slate-900">EUR {category.basePrice}</p>
+                            <p className="font-bold text-slate-900">€{category.basePrice}</p>
                             <p className="text-xs text-slate-500">pro Nacht/Person</p>
                             {isSelected && (
                               <div className="mt-2 h-6 w-6 rounded-full bg-blue-600 flex items-center justify-center ml-auto">
@@ -780,7 +780,7 @@ function BookingWizardDrawer({
                   return cat ? (
                     <div key={catId} className="flex items-center justify-between py-2">
                       <span className="font-medium text-slate-900">{cat.name}</span>
-                      <span className="text-slate-600">EUR {cat.basePrice}/Nacht</span>
+                      <span className="text-slate-600">€{cat.basePrice}/Nacht</span>
                     </div>
                   ) : null;
                 })}
@@ -792,7 +792,7 @@ function BookingWizardDrawer({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-slate-600">{nights} Nächte × {adults} Erwachsene</span>
-                    <span className="text-slate-900">EUR {(roomCategories.find(c => selectedCategories.includes(c.id))?.basePrice || 0) * nights * adults}</span>
+                    <span className="text-slate-900">€{(roomCategories.find(c => selectedCategories.includes(c.id))?.basePrice || 0) * nights * adults}</span>
                   </div>
                   {Object.entries(childrenByTier).map(([tierId, count]) => {
                     if (count === 0) return null;
@@ -800,13 +800,13 @@ function BookingWizardDrawer({
                     return tier ? (
                       <div key={tierId} className="flex items-center justify-between">
                         <span className="text-slate-600">{count}× Kind ({tier.ageFrom}-{tier.ageTo}J)</span>
-                        <span className="text-slate-900">EUR {tier.price * nights * count}</span>
+                        <span className="text-slate-900">€{tier.price * nights * count}</span>
                       </div>
                     ) : null;
                   })}
                   <div className="pt-3 mt-3 border-t border-blue-200 flex items-center justify-between">
                     <span className="font-bold text-blue-900">Gesamtpreis</span>
-                    <span className="text-2xl font-bold text-blue-900">EUR {calculatePrice.total}</span>
+                    <span className="text-2xl font-bold text-blue-900">€{calculatePrice.total}</span>
                   </div>
                 </div>
               </div>
@@ -915,11 +915,11 @@ function InquiryDetailDrawer({
   return (
     <>
       {isOpen && (
-        <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+        <div className="fixed inset-0 bg-black/20 z-[60]" onClick={onClose} />
       )}
       <div
         className={`
-          fixed top-0 right-0 h-full w-full max-w-lg bg-white shadow-2xl z-50
+          fixed top-0 right-0 h-full w-full max-w-lg bg-white shadow-2xl z-[70]
           transform transition-transform duration-300 ease-out
           ${isOpen ? 'translate-x-0' : 'translate-x-full'}
         `}
@@ -1073,7 +1073,7 @@ function InquiryDetailDrawer({
                     <Euro className="h-4 w-4" />
                     <span className="text-xs font-medium uppercase">Geschätzter Preis</span>
                   </div>
-                  <p className="text-2xl font-bold text-green-700">EUR {inquiry.totalPrice.toLocaleString('de-DE')}</p>
+                  <p className="text-2xl font-bold text-green-700">€{inquiry.totalPrice.toLocaleString('de-DE')}</p>
                 </div>
               )}
 
@@ -1149,14 +1149,14 @@ function InquiryDetailDrawer({
                                 Max. {room.maxOccupancy} Pers.
                               </span>
                               <span className="text-slate-500">
-                                EUR {room.basePrice}/Nacht/Pers.
+                                €{room.basePrice}/Nacht/Pers.
                               </span>
                             </div>
                           </div>
                           <div className="text-right">
                             <p className="text-xs text-slate-400">Geschätzt</p>
                             <p className={`text-lg font-bold ${fitsGuests ? 'text-green-700' : 'text-slate-600'}`}>
-                              EUR {estimatedPrice.toLocaleString('de-DE')}
+                              €{estimatedPrice.toLocaleString('de-DE')}
                             </p>
                             {fitsGuests && (
                               <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-green-200 text-green-800">
@@ -1556,9 +1556,10 @@ export default function OfferOfficePage() {
   const [leadLinks, setLeadLinks] = useState<LeadLink[]>([]);
   const [leadLinksLoading, setLeadLinksLoading] = useState(true);
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerData | null>(null);
   const [cdsOpen, setCdsOpen] = useState(false);
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [inquiryDetailOpen, setInquiryDetailOpen] = useState(false);
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
   // Demo Zimmerkategorien
   const roomCategories: RoomCategory[] = [
@@ -1709,8 +1710,44 @@ export default function OfferOfficePage() {
   };
 
   const handleInquiryClick = (inquiry: Inquiry) => {
-    setSelectedInquiry(inquiry);
+    // Create customer data from inquiry
+    const customer: CustomerData = {
+      id: inquiry.email, // Use email as ID for grouping
+      name: inquiry.customerName,
+      email: inquiry.email,
+      phone: inquiry.phone,
+    };
+    setSelectedCustomer(customer);
+    setSelectedInquiry(null); // Don't select specific inquiry yet
     setCdsOpen(true);
+  };
+
+  // Get all inquiries for the selected customer
+  const customerInquiries: BookingItem[] = selectedCustomer
+    ? inquiries
+        .filter(i => i.email === selectedCustomer.email)
+        .map(i => ({
+          id: i.id,
+          checkIn: i.checkIn,
+          checkOut: i.checkOut,
+          adults: i.adults,
+          children: i.children,
+          childrenAges: i.childrenAges,
+          status: i.status,
+          createdAt: i.createdAt,
+          totalPrice: i.totalPrice,
+          notes: i.notes,
+          selectedCategories: i.selectedCategories,
+        }))
+    : [];
+
+  // Handle clicking on an inquiry card in CDS
+  const handleCdsInquiryClick = (bookingItem: BookingItem) => {
+    const inquiry = inquiries.find(i => i.id === bookingItem.id);
+    if (inquiry) {
+      setSelectedInquiry(inquiry);
+      setInquiryDetailOpen(true);
+    }
   };
 
   const columns: { status: InquiryStatus; title: string; color: string }[] = [
@@ -1786,11 +1823,25 @@ export default function OfferOfficePage() {
         loading={leadLinksLoading}
       />
 
-      {/* Inquiry Detail Drawer */}
-      <InquiryDetailDrawer
+      {/* Customer Detail Sheet (CDS) */}
+      <CustomerDetailSheet
         isOpen={cdsOpen}
         onClose={() => {
           setCdsOpen(false);
+          setSelectedCustomer(null);
+        }}
+        customer={selectedCustomer}
+        inquiries={customerInquiries}
+        initialTab="inquiries"
+        onInquiryClick={handleCdsInquiryClick}
+        portalToken={selectedCustomer?.id ? `guest-${selectedCustomer.id.replace('@', '-at-').replace(/\./g, '-')}` : undefined}
+      />
+
+      {/* Inquiry Detail Drawer (opens on top of CDS) */}
+      <InquiryDetailDrawer
+        isOpen={inquiryDetailOpen}
+        onClose={() => {
+          setInquiryDetailOpen(false);
           setSelectedInquiry(null);
         }}
         inquiry={selectedInquiry}

@@ -78,7 +78,8 @@ import {
   HardDrive,
   Phone,
   Mail,
-  Home
+  Home,
+  User
 } from 'lucide-react';
 
 // Types
@@ -2001,7 +2002,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                                 </div>
                                 <div className="flex items-center gap-4">
                                   <div className="text-right">
-                                    <div className="font-bold text-slate-900">EUR {article.basePrice.toFixed(2)}</div>
+                                    <div className="font-bold text-slate-900">€{article.basePrice.toFixed(2)}</div>
                                     <div className="text-xs text-slate-400">Basispreis</div>
                                   </div>
                                   <div className="flex items-center gap-1">
@@ -2070,7 +2071,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                           {articleMappings.map((article) => (
                             <div key={article.appArticleId} className="flex items-center justify-between p-2 bg-white rounded-lg text-sm">
                               <span className="text-slate-700">{article.appArticleName}</span>
-                              <span className="text-slate-500">EUR {article.price}</span>
+                              <span className="text-slate-500">€{article.price}</span>
                             </div>
                           ))}
                         </div>
@@ -2354,7 +2355,23 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
               <div className="space-y-6">
                 <div className="bg-white rounded-xl border border-slate-200 p-6">
                   <h3 className="font-semibold text-slate-900 mb-4">Öffentliche Seiten</h3>
-                  <p className="text-sm text-slate-500 mb-6">Verwalten Sie Lead-Formulare und Online-Angebote.</p>
+                  <p className="text-sm text-slate-500 mb-6">Verwalten Sie öffentliche Seiten für Gäste.</p>
+
+                  {/* Gästeportal */}
+                  <div className="p-4 bg-slate-50 rounded-xl mb-4 hover:bg-slate-100 transition-colors cursor-pointer">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                          <User className="h-5 w-5 text-purple-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900">Gästeportal</p>
+                          <p className="text-sm text-slate-500">Persönliches Portal für jeden Gast</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-slate-400" />
+                    </div>
+                  </div>
 
                   {/* Lead Formular */}
                   <div className="p-4 bg-slate-50 rounded-xl mb-4 hover:bg-slate-100 transition-colors cursor-pointer">
@@ -2371,22 +2388,17 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                       <ChevronRight className="h-5 w-5 text-slate-400" />
                     </div>
                   </div>
+                </div>
 
-                  {/* Online Angebot */}
-                  <div className="p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
-                          <Globe className="h-5 w-5 text-green-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900">Online Angebot</p>
-                          <p className="text-sm text-slate-500">Öffentliche Angebotsseiten für Gäste</p>
-                        </div>
-                      </div>
-                      <ChevronRight className="h-5 w-5 text-slate-400" />
-                    </div>
-                  </div>
+                {/* Gästeportal Info */}
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                  <h4 className="font-medium text-purple-900 mb-2">Über das Gästeportal</h4>
+                  <ul className="text-sm text-purple-800 space-y-1">
+                    <li>• Jeder Gast erhält automatisch ein persönliches Portal</li>
+                    <li>• Gäste können ihre Daten selbst aktualisieren</li>
+                    <li>• Anfragen und Buchungen einsehen</li>
+                    <li>• Link per WhatsApp, E-Mail oder kopieren teilen</li>
+                  </ul>
                 </div>
               </div>
             )}
