@@ -321,6 +321,7 @@ export default function SettingsPage() {
 
   // WhatsApp State & API Config
   const WHATSAPP_API_URL = 'http://146.148.3.123:3001';
+  const WHATSAPP_PROXY_URL = 'https://whatsappproxy-u52p2sjk2a-ew.a.run.app';
   const WHATSAPP_API_KEY = 'tt_live_a8f3k2m9x7p4q1w6';
   const WHATSAPP_SESSION_ID = 'stadler-suite';
   const [whatsappStatus, setWhatsappStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
@@ -914,21 +915,36 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   }, [activeTab, communicationSubTab]);
 
   const checkWhatsAppStatusAuto = async () => {
-    // Check if we're on HTTPS and trying to call HTTP API (Mixed Content)
+    // Check if we're on HTTPS - use proxy to avoid Mixed Content
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    const apiUrl = WHATSAPP_API_URL;
 
-    if (isHttps && apiUrl.startsWith('http://')) {
-      console.warn('Mixed Content: HTTPS page cannot access HTTP API. WhatsApp server needs HTTPS.');
-      setWhatsappStatus('disconnected');
-      return;
-    }
+    // Helper function to make API calls (direct or via proxy)
+    const apiCall = async (path: string, options: RequestInit = {}) => {
+      if (isHttps) {
+        // Use Firebase Cloud Function proxy
+        const proxyUrl = `${WHATSAPP_PROXY_URL}?path=${encodeURIComponent(path)}`;
+        return fetch(proxyUrl, {
+          ...options,
+          headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+          }
+        });
+      } else {
+        // Direct call (works on localhost/HTTP)
+        return fetch(`${WHATSAPP_API_URL}${path}`, {
+          ...options,
+          headers: {
+            'X-API-Key': WHATSAPP_API_KEY,
+            ...options.headers
+          }
+        });
+      }
+    };
 
     try {
       // Check if our session exists
-      const statusResponse = await fetch(`${WHATSAPP_API_URL}/status`, {
-        headers: { 'X-API-Key': WHATSAPP_API_KEY }
-      });
+      const statusResponse = await apiCall('/status');
       const statusData = await statusResponse.json();
 
       // Find our session by appId (since session ID has suffix)
@@ -942,9 +958,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
           return;
         } else if (ourSession.hasQr) {
           // Get QR code for existing session - use full session ID
-          const qrResponse = await fetch(`${WHATSAPP_API_URL}/sessions/${ourSession.id}/qr`, {
-            headers: { 'X-API-Key': WHATSAPP_API_KEY }
-          });
+          const qrResponse = await apiCall(`/sessions/${ourSession.id}/qr`);
           const qrData = await qrResponse.json();
           if (qrData.qrCode) {
             setWhatsappStatus('connecting');
@@ -955,12 +969,9 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
       }
 
       // Session doesn't exist - create new session
-      const createResponse = await fetch(`${WHATSAPP_API_URL}/sessions`, {
+      const createResponse = await apiCall('/sessions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': WHATSAPP_API_KEY
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: WHATSAPP_SESSION_ID,
           appId: WHATSAPP_SESSION_ID
@@ -973,9 +984,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
         setWhatsappStatus('connecting');
         setTimeout(async () => {
           try {
-            const qrResponse = await fetch(`${WHATSAPP_API_URL}/sessions/${createData.sessionId}/qr`, {
-              headers: { 'X-API-Key': WHATSAPP_API_KEY }
-            });
+            const qrResponse = await apiCall(`/sessions/${createData.sessionId}/qr`);
             const qrData = await qrResponse.json();
             if (qrData.qrCode) {
               setWhatsappQrCode(qrData.qrCode);
@@ -2312,26 +2321,11 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                     </div>
                   ) : (
                     <div className="text-center py-8">
-                      {typeof window !== 'undefined' && window.location.protocol === 'https:' && WHATSAPP_API_URL.startsWith('http://') ? (
-                        <>
-                          <div className="h-16 w-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <AlertCircle className="h-8 w-8 text-orange-500" />
-                          </div>
-                          <h3 className="text-lg font-semibold text-slate-900 mb-2">HTTPS erforderlich</h3>
-                          <p className="text-slate-500 mb-4">
-                            Der WhatsApp-Server benötigt HTTPS um von dieser Seite aus erreichbar zu sein.
-                            Bitte konfigurieren Sie SSL auf Ihrem WhatsApp-Server (Port 3001).
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <div className="h-16 w-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Phone className="h-8 w-8 text-slate-400" />
-                          </div>
-                          <h3 className="text-lg font-semibold text-slate-900 mb-2">WhatsApp verbinden</h3>
-                          <p className="text-slate-500 mb-4">Klicken Sie auf &quot;Status prüfen&quot; um den QR-Code zu laden.</p>
-                        </>
-                      )}
+                      <div className="h-16 w-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Phone className="h-8 w-8 text-slate-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-2">WhatsApp verbinden</h3>
+                      <p className="text-slate-500 mb-4">Klicken Sie auf &quot;Status prüfen&quot; um den QR-Code zu laden.</p>
                     </div>
                   )}
                 </div>
