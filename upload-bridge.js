@@ -7,8 +7,8 @@ const path = require('path');
 const fs = require('fs');
 
 // Path to the exe file
-const EXE_PATH = 'C:\\Users\\Info\\CapCorn-Bridge\\dist\\CapCornBridge-Setup.exe';
-const STORAGE_PATH = 'downloads/CapCornBridge-Setup.exe';
+const EXE_PATH = 'C:\\Users\\Info\\CapCorn-Bridge\\dist\\CapCornBridge.exe';
+const STORAGE_PATH = 'downloads/CapCornBridge.exe';
 
 async function uploadFile() {
   console.log('Uploading CapCorn Bridge to Firebase Storage...');
