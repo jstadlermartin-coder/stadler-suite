@@ -1,4 +1,5 @@
 const { onRequest } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const fetch = require('node-fetch');
 
@@ -8,19 +9,20 @@ const db = admin.firestore();
 
 // WhatsApp API Configuration
 const WHATSAPP_API_URL = 'http://146.148.3.123:3001';
-const WHATSAPP_API_KEY = 'tt_live_a8f3k2m9x7p4q1w6';
+// API Key als Secret definieren - wird sicher in Google Secret Manager gespeichert
+const whatsappApiKey = defineSecret('WHATSAPP_API_KEY');
 const WHATSAPP_APP_ID = 'stadler-suite';
 const WHATSAPP_SESSION_DOC = 'whatsapp_session';
 
 /**
  * Prüft ob eine WhatsApp Session gültig ist
  */
-async function checkWhatsAppSessionStatus(sessionId) {
+async function checkWhatsAppSessionStatus(sessionId, apiKey) {
   try {
     const response = await fetch(
       `${WHATSAPP_API_URL}/sessions/${sessionId}`,
       {
-        headers: { 'X-API-Key': WHATSAPP_API_KEY },
+        headers: { 'X-API-Key': apiKey },
         timeout: 10000
       }
     );
@@ -41,7 +43,7 @@ async function checkWhatsAppSessionStatus(sessionId) {
 /**
  * Erstellt eine neue WhatsApp Session
  */
-async function createWhatsAppSession() {
+async function createWhatsAppSession(apiKey) {
   try {
     console.log('📱 Erstelle neue WhatsApp-Session...');
     const response = await fetch(
@@ -50,7 +52,7 @@ async function createWhatsAppSession() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': WHATSAPP_API_KEY
+          'X-API-Key': apiKey
         },
         body: JSON.stringify({ appId: WHATSAPP_APP_ID })
       }
@@ -71,7 +73,7 @@ async function createWhatsAppSession() {
 /**
  * Holt eine gültige WhatsApp Session oder erstellt eine neue
  */
-async function getOrCreateWhatsAppSession() {
+async function getOrCreateWhatsAppSession(apiKey) {
   try {
     // 1. Hole gespeicherte Session-ID aus Firestore
     const configDoc = await db.collection('config').doc(WHATSAPP_SESSION_DOC).get();
@@ -79,7 +81,7 @@ async function getOrCreateWhatsAppSession() {
 
     if (sessionId) {
       // 2. Prüfe ob Session noch gültig ist
-      const status = await checkWhatsAppSessionStatus(sessionId);
+      const status = await checkWhatsAppSessionStatus(sessionId, apiKey);
 
       if (status.connected) {
         console.log('✓ Session ist verbunden:', sessionId);
@@ -95,7 +97,7 @@ async function getOrCreateWhatsAppSession() {
     }
 
     // 3. Keine gültige Session - erstelle neue
-    const newSessionId = await createWhatsAppSession();
+    const newSessionId = await createWhatsAppSession(apiKey);
 
     if (newSessionId) {
       // 4. Speichere neue Session-ID in Firestore
@@ -119,9 +121,13 @@ async function getOrCreateWhatsAppSession() {
 exports.whatsappProxy = onRequest(
   {
     region: 'europe-west1',
-    invoker: 'public'
+    invoker: 'public',
+    secrets: [whatsappApiKey]  // Secret für diese Funktion verfügbar machen
   },
   async (req, res) => {
+    // API Key aus Secret lesen
+    const apiKey = whatsappApiKey.value();
+
     // Set CORS headers manually
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -138,7 +144,7 @@ exports.whatsappProxy = onRequest(
     try {
       // Automatisches Session-Management für Session-Endpunkte
       if (path === '/status' || path === '/qr' || path.startsWith('/send') || path.startsWith('/disconnect')) {
-        const sessionId = await getOrCreateWhatsAppSession();
+        const sessionId = await getOrCreateWhatsAppSession(apiKey);
         if (!sessionId) {
           res.status(500).json({ error: 'Keine WhatsApp-Session verfügbar' });
           return;
@@ -163,7 +169,7 @@ exports.whatsappProxy = onRequest(
       const options = {
         method: req.method,
         headers: {
-          'X-API-Key': WHATSAPP_API_KEY,
+          'X-API-Key': apiKey,
           'Content-Type': 'application/json',
         },
       };
