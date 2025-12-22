@@ -198,3 +198,63 @@ exports.whatsappProxy = onRequest(
     }
   }
 );
+
+// WhatsApp Webhook - eingehende Nachrichten empfangen
+exports.whatsappWebhook = onRequest(
+  {
+    region: 'europe-west1',
+    invoker: 'public'
+  },
+  async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      const { sessionId, phone, message, timestamp, messageId, contactName, hasMedia, mediaType } = req.body;
+
+      // Nur stadler-suite Nachrichten verarbeiten
+      if (sessionId && !sessionId.startsWith('stadler-suite')) {
+        console.log('Ignoring message from other app:', sessionId);
+        res.status(200).json({ success: true, ignored: true });
+        return;
+      }
+
+      if (!phone || !message) {
+        res.status(400).json({ error: 'Phone and message required' });
+        return;
+      }
+
+      console.log(`📨 WhatsApp Webhook: ${phone}: ${message.substring(0, 50)}...`);
+
+      // Nachricht in Firestore speichern
+      await db.collection('whatsapp_messages').add({
+        phone: phone.replace(/[^\d]/g, ''),
+        message,
+        messageId: messageId || null,
+        direction: 'incoming',
+        createdAt: timestamp || new Date().toISOString(),
+        read: false,
+        contactName: contactName || null,
+        hasMedia: hasMedia || false,
+        mediaType: mediaType || 'chat',
+        sessionId: sessionId || null
+      });
+
+      res.json({ success: true, phone });
+    } catch (error) {
+      console.error('WhatsApp Webhook error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
