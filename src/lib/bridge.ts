@@ -65,6 +65,87 @@ export interface BridgeStats {
   channels: { chid: number; name: string }[];
 }
 
+// Artikel aus CapCorn
+export interface BridgeArticle {
+  artn: number;           // Artikel-ID
+  beze: string;           // Bezeichnung
+  prei: number;           // Preis
+  knto?: number;          // Konto
+  mwst?: number;          // MwSt-Satz
+}
+
+// Buchungskanäle
+export interface BridgeChannel {
+  chid: number;           // Channel-ID
+  beze: string;           // Bezeichnung (Booking.com, Expedia, etc.)
+}
+
+// Kategorie
+export interface BridgeCategory {
+  catg: number;           // Kategorie-ID
+  beze: string;           // Bezeichnung
+}
+
+// Neue Interfaces für Blockierung und Buchung mit Webapp-Preisen
+export interface BridgeBlockRequest {
+  zimm: number;
+  von: string;  // YYYY-MM-DD
+  bis: string;  // YYYY-MM-DD
+  grund?: string;
+  gast?: number;
+}
+
+export interface BridgeBlockResponse {
+  success: boolean;
+  resn: number;
+  zimm: number;
+  von: string;
+  bis: string;
+  flgl: number;
+  message: string;
+}
+
+export interface BookingPosition {
+  artikel: string;
+  preis: number;
+  artn?: number | null;
+}
+
+export interface BookingPauschale {
+  name: string;
+  preis: number;
+}
+
+export interface BridgeBookingWithPriceRequest {
+  gast?: number;
+  zimm: number;
+  von: string;  // YYYY-MM-DD
+  bis: string;  // YYYY-MM-DD
+  pers?: number;
+  kndr?: number;
+  channel?: number;
+  pession?: number;  // 0=UE, 1=F, 2=HP
+  positionen?: BookingPosition[];
+  pauschale?: BookingPauschale;
+  // Gast-Daten wenn neu:
+  vorname?: string;
+  nachname?: string;
+  email?: string;
+  telefon?: string;
+}
+
+export interface BridgeBookingWithPriceResponse {
+  success: boolean;
+  resn: number;
+  gast: number;
+  zimm: number;
+  von: string;
+  bis: string;
+  positionen: number;
+  total: number;
+  message: string;
+}
+
 // API Funktionen
 class BridgeAPI {
   private baseUrl: string;
@@ -99,6 +180,30 @@ class BridgeAPI {
     if (!response.ok) throw new Error('Failed to fetch rooms');
     const data = await response.json();
     return data.rooms;
+  }
+
+  // Alle Artikel laden (E-Bike, HP, Massage, etc.)
+  async getArticles(): Promise<BridgeArticle[]> {
+    const response = await fetch(`${this.baseUrl}/articles`);
+    if (!response.ok) throw new Error('Failed to fetch articles');
+    const data = await response.json();
+    return data.articles;
+  }
+
+  // Alle Buchungskanäle laden
+  async getChannels(): Promise<BridgeChannel[]> {
+    const response = await fetch(`${this.baseUrl}/channels`);
+    if (!response.ok) throw new Error('Failed to fetch channels');
+    const data = await response.json();
+    return data.channels;
+  }
+
+  // Alle Kategorien laden
+  async getCategories(): Promise<BridgeCategory[]> {
+    const response = await fetch(`${this.baseUrl}/categories`);
+    if (!response.ok) throw new Error('Failed to fetch categories');
+    const data = await response.json();
+    return data.categories;
   }
 
   // Alle Gäste laden (mit Pagination)
@@ -148,6 +253,151 @@ class BridgeAPI {
     if (!response.ok) throw new Error('Failed to fetch booking');
     const data = await response.json();
     return data.booking;
+  }
+
+  // ============================================================
+  // BLOCKIERUNG (Kalender-Sichtbar)
+  // ============================================================
+
+  // Zeitraum im Kalender blockieren
+  async createBlock(block: BridgeBlockRequest): Promise<BridgeBlockResponse> {
+    const response = await fetch(`${this.baseUrl}/block`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(block),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create block');
+    }
+    return response.json();
+  }
+
+  // Blockierung entfernen
+  async removeBlock(resn: number): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${this.baseUrl}/block/${resn}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to remove block');
+    }
+    return response.json();
+  }
+
+  // ============================================================
+  // BUCHUNG MIT WEBAPP-PREISEN
+  // ============================================================
+
+  // Buchung mit Preisen aus Webapp erstellen
+  async createBookingWithPrice(booking: BridgeBookingWithPriceRequest): Promise<BridgeBookingWithPriceResponse> {
+    const response = await fetch(`${this.baseUrl}/booking-with-price`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(booking),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create booking');
+    }
+    return response.json();
+  }
+
+  // Option zur Buchung wandeln
+  async confirmBooking(resn: number): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${this.baseUrl}/book/${resn}`, {
+      method: 'PUT',
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to confirm booking');
+    }
+    return response.json();
+  }
+
+  // Buchung stornieren
+  async cancelBooking(resn: number): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${this.baseUrl}/cancel/${resn}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to cancel booking');
+    }
+    return response.json();
+  }
+
+  // ============================================================
+  // LEISTUNGEN / EXTRAS
+  // ============================================================
+
+  // Leistung auf Konto buchen
+  async addService(resn: number, artn: number, preis?: number, beschreibung?: string): Promise<{ success: boolean; aknr: number }> {
+    const response = await fetch(`${this.baseUrl}/service`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resn,
+        artn,
+        prei: preis,
+        bez1: beschreibung,
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to add service');
+    }
+    return response.json();
+  }
+
+  // ============================================================
+  // GÄSTE
+  // ============================================================
+
+  // Neuen Gast anlegen
+  async createGuest(guest: {
+    vorname?: string;
+    nachname: string;
+    email?: string;
+    telefon?: string;
+    strasse?: string;
+    plz?: string;
+    ort?: string;
+    land?: string;
+  }): Promise<{ success: boolean; gast: number }> {
+    const response = await fetch(`${this.baseUrl}/guest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(guest),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create guest');
+    }
+    return response.json();
+  }
+
+  // Gast aktualisieren
+  async updateGuest(gastId: number, updates: {
+    vorname?: string;
+    nachname?: string;
+    email?: string;
+    telefon?: string;
+    strasse?: string;
+    plz?: string;
+    ort?: string;
+    land?: string;
+  }): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${this.baseUrl}/guest/${gastId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update guest');
+    }
+    return response.json();
   }
 }
 

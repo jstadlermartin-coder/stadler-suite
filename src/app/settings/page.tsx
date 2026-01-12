@@ -892,7 +892,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
 
     const interval = setInterval(() => {
       performSync();
-    }, syncStatus.autoSyncInterval * 60 * 1000); // Convert minutes to ms
+    }, (syncStatus.autoSyncInterval || 15) * 60 * 1000); // Convert minutes to ms
 
     return () => clearInterval(interval);
   }, [syncStatus.autoSyncEnabled, syncStatus.autoSyncInterval, bridgeStatus, bridgeConfig.bridgeUrl]);

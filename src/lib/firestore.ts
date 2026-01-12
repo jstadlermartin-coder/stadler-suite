@@ -497,14 +497,20 @@ export interface CaphotelChannel {
 }
 
 export interface SyncStatus {
-  lastSync: string | null;
-  lastSyncSuccess: boolean;
-  syncInProgress: boolean;
-  bookingsCount: number;
-  guestsCount: number;
+  lastSync?: string | null;
+  lastFullSync?: string | null;
+  lastSyncSuccess?: boolean;
+  syncInProgress?: boolean;
+  bookingsCount?: number;
+  guestsCount?: number;
+  rooms?: number;
+  guests?: number;
+  bookings?: number;
+  articles?: number;
+  channels?: number;
   error?: string;
-  autoSyncEnabled: boolean;
-  autoSyncInterval: number;  // in minutes
+  autoSyncEnabled?: boolean;
+  autoSyncInterval?: number;  // in minutes
 }
 
 // Save synced bookings

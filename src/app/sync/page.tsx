@@ -1,14 +1,30 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { RefreshCw, Check, X, Clock, AlertTriangle, Database, Wifi, WifiOff, Download } from 'lucide-react';
-import { bridgeAPI, BridgeStats } from '@/lib/bridge';
+import { RefreshCw, Check, X, Clock, AlertTriangle, Database, Wifi, WifiOff, Download, Package, Tag } from 'lucide-react';
+import { bridgeAPI, BridgeStats, BridgeArticle, BridgeChannel } from '@/lib/bridge';
+import {
+  saveSyncedBookings,
+  saveSyncedGuests,
+  saveSyncedArticles,
+  saveSyncedRooms,
+  saveSyncedChannels,
+  saveSyncStatus,
+  getSyncStatus,
+  CaphotelBooking,
+  CaphotelGuest,
+  CaphotelArticle,
+  CaphotelRoom,
+  CaphotelChannel
+} from '@/lib/firestore';
 
 interface SyncStatus {
   rooms: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
   guests: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
   bookings: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
   availability: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
+  articles: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
+  channels: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
 }
 
 export default function SyncPage() {
@@ -19,6 +35,8 @@ export default function SyncPage() {
     guests: { status: 'idle', lastSync: null, count: 0 },
     bookings: { status: 'idle', lastSync: null, count: 0 },
     availability: { status: 'idle', lastSync: null, count: 0 },
+    articles: { status: 'idle', lastSync: null, count: 0 },
+    channels: { status: 'idle', lastSync: null, count: 0 },
   });
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLog, setSyncLog] = useState<string[]>([]);
@@ -62,14 +80,23 @@ export default function SyncPage() {
     try {
       const rooms = await bridgeAPI.getRooms();
       const now = new Date().toISOString();
+
+      // In Firestore speichern
+      const firestoreRooms: CaphotelRoom[] = rooms.map(r => ({
+        zimm: r.zimn,
+        beze: r.name,
+        bett: 2, // Default
+        catg: r.caid,
+        stat: r.status === 'active' ? 1 : 0,
+        syncedAt: now
+      }));
+      await saveSyncedRooms(firestoreRooms);
+      addLog(`${rooms.length} Zimmer in Firestore gespeichert`);
+
       setSyncStatus(prev => ({
         ...prev,
         rooms: { status: 'synced', lastSync: now, count: rooms.length }
       }));
-      addLog(`${rooms.length} Zimmer geladen`);
-
-      // Hier würden wir die Daten in Firestore speichern
-      // await saveRoomsToFirestore(rooms);
 
     } catch (error) {
       setSyncStatus(prev => ({ ...prev, rooms: { ...prev.rooms, status: 'error' } }));
@@ -96,15 +123,89 @@ export default function SyncPage() {
       } while (allGuests.length < total);
 
       const now = new Date().toISOString();
+
+      // In Firestore speichern
+      const firestoreGuests: CaphotelGuest[] = allGuests.map(g => ({
+        gast: g.gast,
+        vorn: g.vorn || '',
+        nacn: g.nacn || '',
+        mail: g.mail || '',
+        teln: g.teln || '',
+        stra: g.stra || '',
+        polz: g.polz || '',
+        ortb: g.ortb || '',
+        land: g.land || '',
+        syncedAt: now
+      }));
+      await saveSyncedGuests(firestoreGuests);
+      addLog(`${allGuests.length} Gäste in Firestore gespeichert`);
+
       setSyncStatus(prev => ({
         ...prev,
         guests: { status: 'synced', lastSync: now, count: allGuests.length }
       }));
-      addLog(`${allGuests.length} Gäste komplett geladen`);
 
     } catch (error) {
       setSyncStatus(prev => ({ ...prev, guests: { ...prev.guests, status: 'error' } }));
       addLog(`Fehler beim Laden der Gäste: ${error instanceof Error ? error.message : 'Unbekannt'}`);
+    }
+  };
+
+  const syncArticles = async () => {
+    setSyncStatus(prev => ({ ...prev, articles: { ...prev.articles, status: 'syncing' } }));
+    addLog('Synchronisiere Artikel...');
+
+    try {
+      const articles = await bridgeAPI.getArticles();
+      const now = new Date().toISOString();
+
+      // In Firestore speichern
+      const firestoreArticles: CaphotelArticle[] = articles.map(a => ({
+        artn: a.artn,
+        beze: a.beze,
+        prei: a.prei,
+        knto: a.knto,
+        syncedAt: now
+      }));
+      await saveSyncedArticles(firestoreArticles);
+      addLog(`${articles.length} Artikel in Firestore gespeichert`);
+
+      setSyncStatus(prev => ({
+        ...prev,
+        articles: { status: 'synced', lastSync: now, count: articles.length }
+      }));
+
+    } catch (error) {
+      setSyncStatus(prev => ({ ...prev, articles: { ...prev.articles, status: 'error' } }));
+      addLog(`Fehler beim Laden der Artikel: ${error instanceof Error ? error.message : 'Unbekannt'}`);
+    }
+  };
+
+  const syncChannels = async () => {
+    setSyncStatus(prev => ({ ...prev, channels: { ...prev.channels, status: 'syncing' } }));
+    addLog('Synchronisiere Buchungskanäle...');
+
+    try {
+      const channels = await bridgeAPI.getChannels();
+      const now = new Date().toISOString();
+
+      // In Firestore speichern
+      const firestoreChannels: CaphotelChannel[] = channels.map(c => ({
+        chid: c.chid,
+        name: c.beze,
+        syncedAt: now
+      }));
+      await saveSyncedChannels(firestoreChannels);
+      addLog(`${channels.length} Kanäle in Firestore gespeichert`);
+
+      setSyncStatus(prev => ({
+        ...prev,
+        channels: { status: 'synced', lastSync: now, count: channels.length }
+      }));
+
+    } catch (error) {
+      setSyncStatus(prev => ({ ...prev, channels: { ...prev.channels, status: 'error' } }));
+      addLog(`Fehler beim Laden der Kanäle: ${error instanceof Error ? error.message : 'Unbekannt'}`);
     }
   };
 
@@ -170,6 +271,23 @@ export default function SyncPage() {
     await syncGuests();
     await syncCalendar();
     await syncAvailability();
+    await syncArticles();
+    await syncChannels();
+
+    // Sync-Status in Firestore speichern
+    try {
+      await saveSyncStatus({
+        lastFullSync: new Date().toISOString(),
+        rooms: syncStatus.rooms.count,
+        guests: syncStatus.guests.count,
+        bookings: syncStatus.bookings.count,
+        articles: syncStatus.articles.count,
+        channels: syncStatus.channels.count,
+      });
+      addLog('Sync-Status in Firestore gespeichert');
+    } catch (e) {
+      addLog('Warnung: Sync-Status konnte nicht gespeichert werden');
+    }
 
     addLog('=== Synchronisation abgeschlossen ===');
     setIsSyncing(false);
@@ -270,27 +388,40 @@ export default function SyncPage() {
 
       {/* Sync Status Cards */}
       <div className="grid grid-cols-2 gap-4 mb-6">
-        {(['rooms', 'guests', 'bookings', 'availability'] as const).map((key) => {
+        {(['rooms', 'guests', 'bookings', 'availability', 'articles', 'channels'] as const).map((key) => {
           const data = syncStatus[key];
           const labels = {
             rooms: 'Zimmer',
             guests: 'Gäste',
             bookings: 'Buchungen',
             availability: 'Verfügbarkeit',
+            articles: 'Artikel',
+            channels: 'Buchungskanäle',
           };
           const syncFunctions = {
             rooms: syncRooms,
             guests: syncGuests,
             bookings: syncCalendar,
             availability: syncAvailability,
+            articles: syncArticles,
+            channels: syncChannels,
           };
+          const icons = {
+            rooms: Database,
+            guests: Database,
+            bookings: Database,
+            availability: Database,
+            articles: Package,
+            channels: Tag,
+          };
+          const IconComponent = icons[key];
 
           return (
             <div key={key} className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                    <Database className="h-5 w-5 text-slate-600" />
+                    <IconComponent className="h-5 w-5 text-slate-600" />
                   </div>
                   <div>
                     <h3 className="font-semibold text-slate-900">{labels[key]}</h3>
