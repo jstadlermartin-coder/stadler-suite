@@ -2982,21 +2982,30 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                 {/* Download Sub-Tab */}
                 {bridgeSubTab === 'download' && (
                   <div className="space-y-6">
-                    {/* Main Download */}
+                    {/* Main Download - EXE */}
                     <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
                       <div className="flex items-center justify-between flex-wrap gap-4">
                         <div>
-                          <h3 className="text-xl font-semibold mb-2">CapCorn Bridge v4.0</h3>
+                          <div className="flex items-center gap-2 mb-2">
+                            <Box className="w-6 h-6" />
+                            <h3 className="text-xl font-semibold">CapCornBridge.exe</h3>
+                          </div>
                           <p className="text-blue-100 mb-2">
-                            Automatischer Installer - Python-Pakete werden automatisch installiert
+                            Eine Datei - kein Python noetig!
                           </p>
-                          <div className="flex items-center gap-2 text-sm text-blue-200">
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>Mit Backup-Agent</span>
+                          <div className="flex flex-wrap gap-3 text-sm text-blue-200">
+                            <div className="flex items-center gap-1">
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>Mit Backup-Agent</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>~33 MB</span>
+                            </div>
                           </div>
                         </div>
                         <button
-                          onClick={() => handleBridgeDownload('install.bat')}
+                          onClick={() => handleBridgeDownload('CapCornBridge.exe')}
                           disabled={bridgeDownloading}
                           className="flex items-center gap-2 bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors disabled:opacity-50"
                         >
@@ -3005,55 +3014,51 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                           ) : (
                             <Download className="w-5 h-5" />
                           )}
-                          install.bat
+                          Download .exe
                         </button>
                       </div>
                     </div>
 
-                    {/* Individual Files */}
+                    {/* Installation Info */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <h4 className="font-semibold text-blue-900 mb-2">Installation</h4>
+                      <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                        <li>CapCornBridge.exe herunterladen</li>
+                        <li>In den CapCorn-Ordner kopieren (z.B. C:\datat\)</li>
+                        <li>Doppelklick zum Starten</li>
+                      </ol>
+                    </div>
+
+                    {/* Developer Files */}
                     <div className="bg-white rounded-xl border border-slate-200 p-6">
-                      <h3 className="font-semibold text-slate-900 mb-4">Einzelne Dateien</h3>
-                      <div className="space-y-3">
+                      <h3 className="font-semibold text-slate-900 mb-4">Entwickler-Dateien (optional)</h3>
+                      <div className="space-y-2">
                         <button
                           onClick={() => handleBridgeDownload('capcorn_bridge_gui.py')}
-                          className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                          className="w-full flex items-center justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <FileText className="w-5 h-5 text-slate-500" />
+                            <FileText className="w-4 h-4 text-slate-500" />
                             <div className="text-left">
-                              <div className="font-medium text-slate-900">capcorn_bridge_gui.py</div>
-                              <div className="text-sm text-slate-500">GUI mit System-Tray und Backup</div>
+                              <div className="font-medium text-slate-900 text-sm">capcorn_bridge_gui.py</div>
+                              <div className="text-xs text-slate-500">Python-Quellcode</div>
                             </div>
                           </div>
-                          <Download className="w-5 h-5 text-slate-400" />
+                          <Download className="w-4 h-4 text-slate-400" />
                         </button>
 
                         <button
-                          onClick={() => handleBridgeDownload('capcorn_bridge.py')}
-                          className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                          onClick={() => handleBridgeDownload('install.bat')}
+                          className="w-full flex items-center justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <FileText className="w-5 h-5 text-slate-500" />
+                            <FileText className="w-4 h-4 text-slate-500" />
                             <div className="text-left">
-                              <div className="font-medium text-slate-900">capcorn_bridge.py</div>
-                              <div className="text-sm text-slate-500">REST API (Standalone)</div>
+                              <div className="font-medium text-slate-900 text-sm">install.bat</div>
+                              <div className="text-xs text-slate-500">Python-Installer</div>
                             </div>
                           </div>
-                          <Download className="w-5 h-5 text-slate-400" />
-                        </button>
-
-                        <button
-                          onClick={() => handleBridgeDownload('README.txt')}
-                          className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
-                        >
-                          <div className="flex items-center gap-3">
-                            <FileText className="w-5 h-5 text-slate-500" />
-                            <div className="text-left">
-                              <div className="font-medium text-slate-900">README.txt</div>
-                              <div className="text-sm text-slate-500">Installationsanleitung</div>
-                            </div>
-                          </div>
-                          <Download className="w-5 h-5 text-slate-400" />
+                          <Download className="w-4 h-4 text-slate-400" />
                         </button>
                       </div>
                     </div>

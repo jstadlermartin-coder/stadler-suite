@@ -7,14 +7,16 @@ import {
   CheckCircle,
   Terminal,
   FileCode,
-  Settings,
   Cloud,
   HardDrive,
-  ArrowRight
+  Package,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 export default function DownloadPage() {
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [showDevFiles, setShowDevFiles] = useState(false);
 
   const handleDownload = (file: string) => {
     setDownloading(file);
@@ -77,81 +79,127 @@ export default function DownloadPage() {
         <div className="bg-white rounded-2xl shadow-lg p-8 mb-12">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Download</h2>
 
-          {/* Main Download */}
+          {/* Main Download - EXE */}
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 mb-6 text-white">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
-                <h3 className="text-xl font-semibold mb-2">Automatische Installation</h3>
-                <p className="text-blue-100 mb-4">
-                  Installer herunterladen und ausfuehren - fertig!
+                <div className="flex items-center gap-2 mb-2">
+                  <Package className="w-6 h-6" />
+                  <h3 className="text-xl font-semibold">CapCornBridge.exe</h3>
+                </div>
+                <p className="text-blue-100 mb-3">
+                  Einfach herunterladen, in den CapCorn-Ordner kopieren, fertig!
                 </p>
-                <div className="flex items-center gap-2 text-sm text-blue-200">
-                  <CheckCircle className="w-4 h-4" />
-                  <span>Python-Pakete werden automatisch installiert</span>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <div className="flex items-center gap-1 text-blue-200">
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Kein Python noetig</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-blue-200">
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Eine Datei</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-blue-200">
+                    <CheckCircle className="w-4 h-4" />
+                    <span>~33 MB</span>
+                  </div>
                 </div>
               </div>
               <button
-                onClick={() => handleDownload('install.bat')}
-                disabled={downloading === 'install.bat'}
+                onClick={() => handleDownload('CapCornBridge.exe')}
+                disabled={downloading === 'CapCornBridge.exe'}
                 className="flex items-center gap-2 bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors disabled:opacity-50"
               >
-                {downloading === 'install.bat' ? (
+                {downloading === 'CapCornBridge.exe' ? (
                   <>Wird heruntergeladen...</>
                 ) : (
                   <>
                     <Download className="w-5 h-5" />
-                    install.bat
+                    Download .exe
                   </>
                 )}
               </button>
             </div>
           </div>
 
-          {/* Individual Files */}
-          <h3 className="font-semibold text-gray-700 mb-4">Einzelne Dateien</h3>
-          <div className="space-y-3">
-            <button
-              onClick={() => handleDownload('capcorn_bridge_gui.py')}
-              className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <FileCode className="w-5 h-5 text-gray-500" />
-                <div className="text-left">
-                  <div className="font-medium text-gray-900">capcorn_bridge_gui.py</div>
-                  <div className="text-sm text-gray-500">GUI mit System-Tray und Backup</div>
-                </div>
+          {/* Developer Files - Collapsible */}
+          <button
+            onClick={() => setShowDevFiles(!showDevFiles)}
+            className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left"
+          >
+            <div className="flex items-center gap-3">
+              <FileCode className="w-5 h-5 text-gray-500" />
+              <div>
+                <div className="font-medium text-gray-900">Entwickler-Dateien</div>
+                <div className="text-sm text-gray-500">Python-Quellcode und Installer-Script</div>
               </div>
-              <Download className="w-5 h-5 text-gray-400" />
-            </button>
+            </div>
+            {showDevFiles ? (
+              <ChevronUp className="w-5 h-5 text-gray-400" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-gray-400" />
+            )}
+          </button>
 
-            <button
-              onClick={() => handleDownload('capcorn_bridge.py')}
-              className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <FileCode className="w-5 h-5 text-gray-500" />
-                <div className="text-left">
-                  <div className="font-medium text-gray-900">capcorn_bridge.py</div>
-                  <div className="text-sm text-gray-500">REST API (Standalone)</div>
+          {showDevFiles && (
+            <div className="mt-3 space-y-2 pl-4 border-l-2 border-gray-200">
+              <button
+                onClick={() => handleDownload('install.bat')}
+                className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <FileCode className="w-4 h-4 text-gray-500" />
+                  <div className="text-left">
+                    <div className="font-medium text-gray-900 text-sm">install.bat</div>
+                    <div className="text-xs text-gray-500">Installer fuer Python-Version</div>
+                  </div>
                 </div>
-              </div>
-              <Download className="w-5 h-5 text-gray-400" />
-            </button>
+                <Download className="w-4 h-4 text-gray-400" />
+              </button>
 
-            <button
-              onClick={() => handleDownload('README.txt')}
-              className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <FileCode className="w-5 h-5 text-gray-500" />
-                <div className="text-left">
-                  <div className="font-medium text-gray-900">README.txt</div>
-                  <div className="text-sm text-gray-500">Installationsanleitung</div>
+              <button
+                onClick={() => handleDownload('capcorn_bridge_gui.py')}
+                className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <FileCode className="w-4 h-4 text-gray-500" />
+                  <div className="text-left">
+                    <div className="font-medium text-gray-900 text-sm">capcorn_bridge_gui.py</div>
+                    <div className="text-xs text-gray-500">GUI mit System-Tray und Backup</div>
+                  </div>
                 </div>
-              </div>
-              <Download className="w-5 h-5 text-gray-400" />
-            </button>
-          </div>
+                <Download className="w-4 h-4 text-gray-400" />
+              </button>
+
+              <button
+                onClick={() => handleDownload('capcorn_bridge.py')}
+                className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <FileCode className="w-4 h-4 text-gray-500" />
+                  <div className="text-left">
+                    <div className="font-medium text-gray-900 text-sm">capcorn_bridge.py</div>
+                    <div className="text-xs text-gray-500">REST API (Standalone)</div>
+                  </div>
+                </div>
+                <Download className="w-4 h-4 text-gray-400" />
+              </button>
+
+              <button
+                onClick={() => handleDownload('README.txt')}
+                className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <FileCode className="w-4 h-4 text-gray-500" />
+                  <div className="text-left">
+                    <div className="font-medium text-gray-900 text-sm">README.txt</div>
+                    <div className="text-xs text-gray-500">Installationsanleitung</div>
+                  </div>
+                </div>
+                <Download className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Installation Steps */}
@@ -164,12 +212,9 @@ export default function DownloadPage() {
                 1
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900">Python installieren</h3>
+                <h3 className="font-semibold text-gray-900">CapCornBridge.exe herunterladen</h3>
                 <p className="text-gray-600 mt-1">
-                  <a href="https://www.python.org/downloads/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                    python.org/downloads
-                  </a>
-                  {' '}- Wichtig: &quot;Add Python to PATH&quot; aktivieren!
+                  Klicken Sie auf den Download-Button oben.
                 </p>
               </div>
             </div>
@@ -179,9 +224,9 @@ export default function DownloadPage() {
                 2
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900">install.bat ausfuehren</h3>
+                <h3 className="font-semibold text-gray-900">In den CapCorn-Ordner kopieren</h3>
                 <p className="text-gray-600 mt-1">
-                  Doppelklick auf die heruntergeladene Datei. Alles wird automatisch eingerichtet.
+                  Kopieren Sie die .exe in den Ordner mit der caphotel.mdb Datenbank, z.B. <code className="bg-gray-100 px-2 py-1 rounded text-sm">C:\datat\</code>
                 </p>
               </div>
             </div>
@@ -196,8 +241,11 @@ export default function DownloadPage() {
                   <a href="https://cloud.google.com/sdk/docs/install" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                     cloud.google.com/sdk
                   </a>
-                  {' '}- Dann einmalig: <code className="bg-gray-100 px-2 py-1 rounded text-sm">gcloud auth application-default login</code>
+                  {' '}- Einmalig installieren und authentifizieren:
                 </p>
+                <code className="block bg-gray-900 text-green-400 px-3 py-2 rounded mt-2 text-sm">
+                  gcloud auth application-default login
+                </code>
               </div>
             </div>
 
@@ -208,10 +256,22 @@ export default function DownloadPage() {
               <div>
                 <h3 className="font-semibold text-gray-900">Fertig!</h3>
                 <p className="text-gray-600 mt-1">
-                  Desktop-Verknuepfung &quot;CapCorn Bridge&quot; starten und Datenbank-Pfad einstellen.
+                  Doppelklick auf CapCornBridge.exe und Datenbank-Pfad einstellen.
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Info Box */}
+          <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+            <h4 className="font-semibold text-blue-900 mb-2">Ordnerstruktur nach Installation</h4>
+            <pre className="text-sm text-blue-800 font-mono">
+{`C:\\datat\\
+├── caphotel.mdb          # CapCorn Datenbank
+├── CapCornBridge.exe     # Bridge (DIESE Datei)
+├── config.json           # Wird automatisch erstellt
+└── backups\\              # Backup-Ordner`}
+            </pre>
           </div>
         </div>
 

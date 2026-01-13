@@ -8,7 +8,7 @@ admin.initializeApp();
 const db = admin.firestore();
 
 // WhatsApp API Configuration
-const WHATSAPP_API_URL = 'http://146.148.3.123:3001';
+const WHATSAPP_API_URL = 'https://whatsapp-bridge-863875790874.europe-west1.run.app';
 // API Key als Secret definieren - wird sicher in Google Secret Manager gespeichert
 const whatsappApiKey = defineSecret('WHATSAPP_API_KEY');
 const WHATSAPP_APP_ID = 'stadler-suite';
