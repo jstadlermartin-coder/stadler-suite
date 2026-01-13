@@ -401,7 +401,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   const [bridgeLoading, setBridgeLoading] = useState(false);
 
   // Bridge sub-tab
-  const [bridgeSubTab, setBridgeSubTab] = useState<'setup' | 'rooms' | 'articles' | 'sync'>('setup');
+  const [bridgeSubTab, setBridgeSubTab] = useState<'setup' | 'download' | 'rooms' | 'articles' | 'sync'>('setup');
 
   // Sync State
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
@@ -628,27 +628,19 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   };
 
   // Bridge Download
-  const handleBridgeDownload = async () => {
+  const handleBridgeDownload = async (file: string = 'install.bat') => {
     setBridgeDownloading(true);
     try {
-      const bridgeRef = ref(storage, 'downloads/CapCornBridge-Setup.exe');
-      const url = await getDownloadURL(bridgeRef);
-
-      // Open download in new tab
+      // Download from public folder
       const link = document.createElement('a');
-      link.href = url;
-      link.download = 'CapCornBridge-Setup.exe';
+      link.href = `/downloads/${file}`;
+      link.download = file;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } catch (error: unknown) {
       console.error('Error downloading bridge:', error);
-      // If file doesn't exist yet, show info
-      if (error && typeof error === 'object' && 'code' in error && error.code === 'storage/object-not-found') {
-        alert('Die Bridge-Datei ist noch nicht verfügbar. Bitte wenden Sie sich an den Support.');
-      } else {
-        alert('Fehler beim Herunterladen. Bitte versuchen Sie es später erneut.');
-      }
+      alert('Fehler beim Herunterladen. Bitte versuchen Sie es später erneut.');
     } finally {
       setBridgeDownloading(false);
     }
@@ -2858,8 +2850,19 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  <Download className="h-4 w-4 inline mr-2" />
+                  <Settings2 className="h-4 w-4 inline mr-2" />
                   Setup
+                </button>
+                <button
+                  onClick={() => setBridgeSubTab('download')}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    bridgeSubTab === 'download'
+                      ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Download className="h-4 w-4 inline mr-2" />
+                  Download
                 </button>
                 <button
                   onClick={() => setBridgeSubTab('rooms')}
@@ -2973,6 +2976,192 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* Download Sub-Tab */}
+                {bridgeSubTab === 'download' && (
+                  <div className="space-y-6">
+                    {/* Main Download */}
+                    <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white">
+                      <div className="flex items-center justify-between flex-wrap gap-4">
+                        <div>
+                          <h3 className="text-xl font-semibold mb-2">CapCorn Bridge v4.0</h3>
+                          <p className="text-blue-100 mb-2">
+                            Automatischer Installer - Python-Pakete werden automatisch installiert
+                          </p>
+                          <div className="flex items-center gap-2 text-sm text-blue-200">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Mit Backup-Agent</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleBridgeDownload('install.bat')}
+                          disabled={bridgeDownloading}
+                          className="flex items-center gap-2 bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors disabled:opacity-50"
+                        >
+                          {bridgeDownloading ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : (
+                            <Download className="w-5 h-5" />
+                          )}
+                          install.bat
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Individual Files */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-6">
+                      <h3 className="font-semibold text-slate-900 mb-4">Einzelne Dateien</h3>
+                      <div className="space-y-3">
+                        <button
+                          onClick={() => handleBridgeDownload('capcorn_bridge_gui.py')}
+                          className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-slate-500" />
+                            <div className="text-left">
+                              <div className="font-medium text-slate-900">capcorn_bridge_gui.py</div>
+                              <div className="text-sm text-slate-500">GUI mit System-Tray und Backup</div>
+                            </div>
+                          </div>
+                          <Download className="w-5 h-5 text-slate-400" />
+                        </button>
+
+                        <button
+                          onClick={() => handleBridgeDownload('capcorn_bridge.py')}
+                          className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-slate-500" />
+                            <div className="text-left">
+                              <div className="font-medium text-slate-900">capcorn_bridge.py</div>
+                              <div className="text-sm text-slate-500">REST API (Standalone)</div>
+                            </div>
+                          </div>
+                          <Download className="w-5 h-5 text-slate-400" />
+                        </button>
+
+                        <button
+                          onClick={() => handleBridgeDownload('README.txt')}
+                          className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-slate-500" />
+                            <div className="text-left">
+                              <div className="font-medium text-slate-900">README.txt</div>
+                              <div className="text-sm text-slate-500">Installationsanleitung</div>
+                            </div>
+                          </div>
+                          <Download className="w-5 h-5 text-slate-400" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* README Content */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-6">
+                      <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                        <FileText className="w-5 h-5" />
+                        Installationsanleitung
+                      </h3>
+
+                      <div className="space-y-6 text-sm">
+                        {/* Schnell-Installation */}
+                        <div>
+                          <h4 className="font-semibold text-slate-800 mb-2">Schnell-Installation</h4>
+                          <ol className="list-decimal list-inside space-y-1 text-slate-600">
+                            <li>install.bat herunterladen</li>
+                            <li>Doppelklick auf install.bat</li>
+                            <li>Fertig!</li>
+                          </ol>
+                        </div>
+
+                        {/* Manuelle Installation */}
+                        <div>
+                          <h4 className="font-semibold text-slate-800 mb-2">Manuelle Installation</h4>
+                          <ol className="list-decimal list-inside space-y-2 text-slate-600">
+                            <li>
+                              <span className="font-medium">Python 3.8+ installieren</span>
+                              <br />
+                              <a href="https://www.python.org/downloads/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline ml-4">
+                                python.org/downloads
+                              </a>
+                              <br />
+                              <span className="text-red-600 ml-4">WICHTIG: &quot;Add Python to PATH&quot; aktivieren!</span>
+                            </li>
+                            <li>
+                              <span className="font-medium">Ordner erstellen:</span>
+                              <code className="bg-slate-100 px-2 py-0.5 rounded ml-2">C:\Users\[Name]\CapCorn-Bridge\</code>
+                            </li>
+                            <li>
+                              <span className="font-medium">Dateien kopieren:</span>
+                              <br />
+                              <span className="ml-4">capcorn_bridge.py + capcorn_bridge_gui.py</span>
+                            </li>
+                            <li>
+                              <span className="font-medium">Pakete installieren (CMD):</span>
+                              <br />
+                              <code className="bg-slate-900 text-green-400 px-3 py-1 rounded text-xs block mt-1 ml-4">
+                                pip install flask flask-cors pyodbc firebase-admin pystray pillow
+                              </code>
+                            </li>
+                            <li>
+                              <span className="font-medium">Google Cloud CLI installieren (fuer Firebase):</span>
+                              <br />
+                              <a href="https://cloud.google.com/sdk/docs/install" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline ml-4">
+                                cloud.google.com/sdk
+                              </a>
+                            </li>
+                            <li>
+                              <span className="font-medium">Authentifizieren (einmalig):</span>
+                              <br />
+                              <code className="bg-slate-900 text-green-400 px-3 py-1 rounded text-xs block mt-1 ml-4">
+                                gcloud auth application-default login
+                              </code>
+                            </li>
+                            <li>
+                              <span className="font-medium">Bridge starten:</span>
+                              <br />
+                              <code className="bg-slate-900 text-green-400 px-3 py-1 rounded text-xs block mt-1 ml-4">
+                                python capcorn_bridge_gui.py
+                              </code>
+                            </li>
+                          </ol>
+                        </div>
+
+                        {/* Konfiguration */}
+                        <div>
+                          <h4 className="font-semibold text-slate-800 mb-2">Konfiguration</h4>
+                          <p className="text-slate-600 mb-2">Die config.json wird automatisch erstellt. Wichtig: Datenbank-Pfad anpassen!</p>
+                          <pre className="bg-slate-900 text-green-400 p-3 rounded text-xs overflow-x-auto">
+{`{
+  "database_path": "C:\\\\datat\\\\caphotel.mdb",
+  "port": 5000,
+  "auto_sync": true,
+  "sync_interval": 15,
+  "backup_enabled": true,
+  "backup_interval": 6
+}`}
+                          </pre>
+                        </div>
+
+                        {/* API Endpoints */}
+                        <div>
+                          <h4 className="font-semibold text-slate-800 mb-2">API Endpoints</h4>
+                          <div className="bg-slate-50 rounded-lg p-3 font-mono text-xs space-y-1">
+                            <div><span className="text-green-600">GET</span> /rooms - Alle Zimmer</div>
+                            <div><span className="text-green-600">GET</span> /guests - Gaeste suchen</div>
+                            <div><span className="text-green-600">GET</span> /guests/&#123;id&#125; - Gast mit Mitreisenden</div>
+                            <div><span className="text-blue-600">PUT</span> /guest/&#123;id&#125; - Gast aktualisieren</div>
+                            <div><span className="text-green-600">GET</span> /bookings - Buchungen</div>
+                            <div><span className="text-green-600">GET</span> /invoices - Rechnungen</div>
+                            <div><span className="text-green-600">GET</span> /backup/status - Backup-Status</div>
+                            <div><span className="text-yellow-600">POST</span> /backup/now - Backup erstellen</div>
+                          </div>
+                          <p className="text-slate-500 mt-2">Vollstaendige Dokumentation: <code className="bg-slate-100 px-1 rounded">http://localhost:5000/</code></p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
