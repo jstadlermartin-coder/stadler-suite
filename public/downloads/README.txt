@@ -1,5 +1,5 @@
 ============================================================
-  CapCorn Bridge v4.0
+  CapCorn Bridge v4.1
   Hotel Stadler - Datenbank-Synchronisation & Backup
 ============================================================
 
@@ -16,36 +16,46 @@ Funktionen:
 - Windows-Autostart
 
 
-SCHNELL-INSTALLATION
---------------------
-1. install.bat doppelklicken
-2. Fertig!
+SCHNELL-INSTALLATION (EXE)
+--------------------------
+1. CapCornBridge.exe herunterladen
+2. firebase-key.json vom Admin erhalten
+3. Beide Dateien in den CapCorn-Ordner kopieren (z.B. C:\datat\)
+4. Doppelklick auf CapCornBridge.exe
+5. Datenbank-Pfad in Einstellungen setzen
+6. Fertig!
 
 
-MANUELLE INSTALLATION
----------------------
+ORDNERSTRUKTUR
+--------------
+C:\datat\
+├── caphotel.mdb          # CapCorn Datenbank
+├── CapCornBridge.exe     # Bridge (DIESE Datei)
+├── firebase-key.json     # Firebase Service Account Key
+├── config.json           # Wird automatisch erstellt
+└── backups\              # Backup-Ordner
+
+
+FIREBASE KEY ERSTELLEN (nur Admin)
+----------------------------------
+1. Firebase Console oeffnen: https://console.firebase.google.com
+2. Projekt "stadler-suite" waehlen
+3. Projekteinstellungen → Dienstkonten
+4. "Neuen privaten Schluessel generieren"
+5. JSON-Datei herunterladen
+6. Umbenennen zu "firebase-key.json"
+7. Datei sicher an Hotel-PC uebertragen
+
+
+PYTHON-INSTALLATION (optional, fuer Entwickler)
+-----------------------------------------------
 1. Python 3.8+ installieren
    https://www.python.org/downloads/
-   WICHTIG: "Add Python to PATH" aktivieren!
 
-2. Ordner erstellen:
-   C:\Users\[Name]\CapCorn-Bridge\
+2. install.bat doppelklicken
+   ODER manuell: pip install flask flask-cors pyodbc firebase-admin pystray pillow
 
-3. Dateien kopieren:
-   - capcorn_bridge.py
-   - capcorn_bridge_gui.py
-
-4. Pakete installieren (CMD):
-   pip install flask flask-cors pyodbc firebase-admin pystray pillow
-
-5. Google Cloud CLI installieren (fuer Firebase):
-   https://cloud.google.com/sdk/docs/install
-
-6. Authentifizieren (einmalig):
-   gcloud auth application-default login
-
-7. Bridge starten:
-   python capcorn_bridge_gui.py
+3. python capcorn_bridge_gui.py starten
 
 
 KONFIGURATION
