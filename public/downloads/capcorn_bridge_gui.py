@@ -45,6 +45,17 @@ def get_config_path():
 
 CONFIG_PATH = get_config_path()
 
+def get_firebase_key_path():
+    """Get firebase-key.json path - works for both script and exe"""
+    if getattr(sys, 'frozen', False):
+        # .exe Mode - look next to executable
+        return os.path.join(os.path.dirname(sys.executable), 'firebase-key.json')
+    else:
+        # Development Mode - look next to script
+        return os.path.join(os.path.dirname(__file__), 'firebase-key.json')
+
+FIREBASE_KEY_PATH = get_firebase_key_path()
+
 DEFAULT_CONFIG = {
     "database_path": "C:\\datat\\caphotel.mdb",
     "port": 5000,
@@ -193,7 +204,7 @@ def serialize_row(row):
 def index():
     return jsonify({
         "name": "CapCorn Bridge API",
-        "version": "4.0.0-Backup",
+        "version": "4.2.0",
         "status": "running",
         "database": config['database_path'],
         "timestamp": datetime.now().isoformat(),
@@ -213,9 +224,25 @@ def index():
             "registrations": "/registrations/<resn>",
             "register": "/register/<resn> (POST)",
             "deregister": "/deregister/<annr> (PUT)",
+            "option": "/option (POST) - Buchung anlegen",
+            "book": "/book/<resn> (PUT) - Buchung bestaetigen",
+            "cancel": "/cancel/<resn> (DELETE) - Stornieren",
+            "guest_create": "/guest (POST)",
+            "guest_update": "/guest/<gast> (PUT)",
+            "service": "/service (POST) - Leistung aufbuchen",
+            "blocks": "/blocks - Alle Blockierungen",
+            "block_create": "/block (POST) - Zeitraum blockieren",
+            "block_delete": "/block/<resn> (DELETE) - Blockierung entfernen",
+            "meal": "/meal/<resn> - HP-Buchungen abrufen",
+            "meal_add": "/meal/<resn> (POST) - HP hinzufuegen",
+            "meal_cancel": "/meal/<resn>/cancel (POST) - HP stornieren",
+            "meal_day": "/meal-day?datum=YYYY-MM-DD - HP-Summe pro Tag",
             "invoices": "/invoices",
             "invoice": "/invoices/<rnum>",
             "invoices_by_booking": "/invoices/by-booking/<resn>",
+            "invoices_stats": "/invoices/stats - Umsatz-Statistiken",
+            "invoices_open": "/invoices/open - Offene Rechnungen",
+            "payment_types": "/payment-types - Zahlarten",
             "backup_status": "/backup/status",
             "backup_now": "/backup/now (POST)",
             "backup_list": "/backup/list",
@@ -860,6 +887,406 @@ def add_service():
         conn.close()
 
 # ============================================================================
+# BLOCKIERUNGEN (Zeiträume sperren)
+# ============================================================================
+
+@flask_app.route('/block', methods=['POST'])
+def create_block():
+    """Zeitraum blockieren (z.B. Renovierung, Betriebsurlaub)"""
+    data = request.json
+    if not data:
+        return jsonify({"error": "JSON Body erforderlich"}), 400
+
+    zimm = data.get('zimm')
+    von = data.get('von')
+    bis = data.get('bis')
+    grund = data.get('grund', 'Blockiert')
+
+    if not all([zimm, von, bis]):
+        return jsonify({"error": "zimm, von, bis sind erforderlich"}), 400
+
+    # Check if room is already booked
+    query_check = "SELECT COUNT(*) as c FROM BUZ WHERE zimm = ? AND vndt <= ? AND bsdt >= ?"
+    check = db_query(query_check, (zimm, bis, von), fetchone=True)
+    if check['c'] > 0:
+        return jsonify({"error": "Zimmer ist im Zeitraum bereits belegt"}), 409
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        # Get next reservation number
+        cursor.execute("SELECT MAX(resn) FROM BUC")
+        max_resn = cursor.fetchone()[0] or 0
+        resn = max_resn + 1
+
+        # Create blocking: stat=0 (Option), flgl=4 (visible in calendar)
+        cursor.execute("""
+            INSERT INTO BUC (resn, gast, stat, flgl, andf, ande, bdat, bemk)
+            VALUES (?, 0, 0, 4, ?, ?, ?, ?)
+        """, (resn, von, bis, datetime.now(), grund))
+
+        # Create room assignment
+        cursor.execute("""
+            INSERT INTO BUZ (resn, lfdn, zimm, vndt, bsdt, pers, kndr)
+            VALUES (?, 1, ?, ?, ?, 0, 0)
+        """, (resn, zimm, von, bis))
+
+        conn.commit()
+        return jsonify({
+            "success": True,
+            "resn": resn,
+            "zimm": zimm,
+            "von": von,
+            "bis": bis,
+            "grund": grund,
+            "message": f"Blockierung {resn} wurde erstellt"
+        }), 201
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@flask_app.route('/block/<int:resn>', methods=['DELETE'])
+def delete_block(resn):
+    """Blockierung entfernen"""
+    # Check if it's a blocking (stat=0, flgl=4)
+    booking = db_query("SELECT resn, stat, flgl FROM BUC WHERE resn = ?", (resn,), fetchone=True)
+    if not booking:
+        return jsonify({"error": "Blockierung nicht gefunden"}), 404
+
+    if booking.get('stat') != 0 or booking.get('flgl') != 4:
+        return jsonify({"error": "Dies ist keine Blockierung sondern eine echte Buchung"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("DELETE FROM BUZ WHERE resn = ?", (resn,))
+        cursor.execute("DELETE FROM BUC WHERE resn = ?", (resn,))
+        conn.commit()
+        return jsonify({"success": True, "resn": resn, "message": f"Blockierung {resn} wurde entfernt"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@flask_app.route('/blocks')
+def get_blocks():
+    """Alle aktiven Blockierungen abrufen"""
+    query = """
+        SELECT BUC.resn, BUC.andf, BUC.ande, BUC.bemk, BUZ.zimm, ZIM.beze
+        FROM BUC
+        INNER JOIN BUZ ON BUC.resn = BUZ.resn
+        LEFT JOIN ZIM ON BUZ.zimm = ZIM.zimm
+        WHERE BUC.stat = 0 AND BUC.flgl = 4
+        ORDER BY BUC.andf
+    """
+    blocks = db_query(query)
+    return jsonify({
+        "count": len(blocks),
+        "blocks": [serialize_row(b) for b in blocks]
+    })
+
+# ============================================================================
+# HALBPENSION (HP) VERWALTUNG
+# ============================================================================
+
+# HP Article IDs from CapCorn
+HP_ARTICLES = {
+    'adult': 53,      # HP Erwachsener
+    'child_8_16': 54, # HP Kind 8-16 Jahre
+    'child_5_7': 55,  # HP Kind 5-7 Jahre
+    'child_0_4': 56   # HP Kind 0-4 Jahre
+}
+
+@flask_app.route('/meal/<int:resn>')
+def get_meal_bookings(resn):
+    """HP-Buchungen für eine Reservierung abrufen"""
+    booking = db_query("SELECT resn, gast FROM BUC WHERE resn = ?", (resn,), fetchone=True)
+    if not booking:
+        return jsonify({"error": "Buchung nicht gefunden"}), 404
+
+    # Get all HP items on account
+    hp_article_ids = list(HP_ARTICLES.values())
+    placeholders = ','.join(['?' for _ in hp_article_ids])
+    query = f"""
+        SELECT AKZ.*, ART.beze as artikel_name
+        FROM AKZ LEFT JOIN ART ON AKZ.artn = ART.artn
+        WHERE AKZ.resn = ? AND AKZ.artn IN ({placeholders})
+        ORDER BY AKZ.edat
+    """
+    params = [resn] + hp_article_ids
+    meals = db_query(query, params)
+
+    # Calculate totals
+    total_positive = sum(m.get('prei', 0) for m in meals if (m.get('prei') or 0) > 0)
+    total_negative = sum(m.get('prei', 0) for m in meals if (m.get('prei') or 0) < 0)
+
+    return jsonify({
+        "resn": resn,
+        "count": len(meals),
+        "total_booked": total_positive,
+        "total_cancelled": abs(total_negative),
+        "net_total": total_positive + total_negative,
+        "meals": [serialize_row(m) for m in meals]
+    })
+
+@flask_app.route('/meal/<int:resn>', methods=['POST'])
+def add_meal(resn):
+    """HP für einen Tag hinzufügen"""
+    data = request.json
+    if not data:
+        return jsonify({"error": "JSON Body erforderlich"}), 400
+
+    booking = db_query("SELECT resn, gast FROM BUC WHERE resn = ?", (resn,), fetchone=True)
+    if not booking:
+        return jsonify({"error": "Buchung nicht gefunden"}), 404
+
+    datum = data.get('datum')  # Date for the meal
+    typ = data.get('typ', 'adult')  # adult, child_8_16, child_5_7, child_0_4
+    anzahl = data.get('anzahl', 1)
+    zimm = data.get('zimm', 0)
+
+    if not datum:
+        return jsonify({"error": "datum ist erforderlich"}), 400
+
+    artn = HP_ARTICLES.get(typ)
+    if not artn:
+        return jsonify({"error": f"Ungueltiger Typ: {typ}. Erlaubt: {list(HP_ARTICLES.keys())}"}), 400
+
+    # Get article price
+    article = db_query("SELECT beze, prei FROM ART WHERE artn = ?", (artn,), fetchone=True)
+    if not article:
+        return jsonify({"error": f"HP-Artikel {artn} nicht gefunden"}), 404
+
+    prei = article['prei'] * anzahl
+    bez1 = f"{article['beze']} ({datum})"
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT MAX(aknr) FROM AKZ")
+        max_aknr = cursor.fetchone()[0] or 0
+        aknr = max_aknr + 1
+
+        cursor.execute("""
+            INSERT INTO AKZ (aknr, lfdn, edat, resn, zimm, artn, prei, bez1)
+            VALUES (?, 1, ?, ?, ?, ?, ?, ?)
+        """, (aknr, datum, resn, zimm, artn, prei, bez1))
+
+        conn.commit()
+        return jsonify({
+            "success": True,
+            "aknr": aknr,
+            "resn": resn,
+            "datum": datum,
+            "typ": typ,
+            "anzahl": anzahl,
+            "prei": prei,
+            "message": f"HP fuer {datum} gebucht"
+        }), 201
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@flask_app.route('/meal/<int:resn>/cancel', methods=['POST'])
+def cancel_meal(resn):
+    """HP für einen Tag stornieren (Minus-Buchung)"""
+    data = request.json
+    if not data:
+        return jsonify({"error": "JSON Body erforderlich"}), 400
+
+    booking = db_query("SELECT resn, gast FROM BUC WHERE resn = ?", (resn,), fetchone=True)
+    if not booking:
+        return jsonify({"error": "Buchung nicht gefunden"}), 404
+
+    datum = data.get('datum')
+    typ = data.get('typ', 'adult')
+    anzahl = data.get('anzahl', 1)
+    zimm = data.get('zimm', 0)
+
+    if not datum:
+        return jsonify({"error": "datum ist erforderlich"}), 400
+
+    artn = HP_ARTICLES.get(typ)
+    if not artn:
+        return jsonify({"error": f"Ungueltiger Typ: {typ}"}), 400
+
+    # Get article price
+    article = db_query("SELECT beze, prei FROM ART WHERE artn = ?", (artn,), fetchone=True)
+    if not article:
+        return jsonify({"error": f"HP-Artikel {artn} nicht gefunden"}), 404
+
+    # Negative price for cancellation
+    prei = -(article['prei'] * anzahl)
+    bez1 = f"STORNO: {article['beze']} ({datum})"
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT MAX(aknr) FROM AKZ")
+        max_aknr = cursor.fetchone()[0] or 0
+        aknr = max_aknr + 1
+
+        cursor.execute("""
+            INSERT INTO AKZ (aknr, lfdn, edat, resn, zimm, artn, prei, bez1)
+            VALUES (?, 1, ?, ?, ?, ?, ?, ?)
+        """, (aknr, datum, resn, zimm, artn, prei, bez1))
+
+        conn.commit()
+        return jsonify({
+            "success": True,
+            "aknr": aknr,
+            "resn": resn,
+            "datum": datum,
+            "typ": typ,
+            "anzahl": anzahl,
+            "prei": prei,
+            "message": f"HP fuer {datum} storniert"
+        }), 201
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@flask_app.route('/meal-day')
+def get_meals_for_day():
+    """HP-Summe für einen bestimmten Tag (für Restaurant/Küche)"""
+    datum = request.args.get('datum')
+    if not datum:
+        datum = datetime.now().strftime('%Y-%m-%d')
+
+    hp_article_ids = list(HP_ARTICLES.values())
+    placeholders = ','.join(['?' for _ in hp_article_ids])
+
+    # Get all HP bookings for this date
+    query = f"""
+        SELECT AKZ.artn, ART.beze, SUM(AKZ.prei) as summe, COUNT(*) as anzahl
+        FROM AKZ
+        LEFT JOIN ART ON AKZ.artn = ART.artn
+        WHERE AKZ.artn IN ({placeholders}) AND AKZ.edat = ?
+        GROUP BY AKZ.artn, ART.beze
+    """
+    params = hp_article_ids + [datum]
+    meals = db_query(query, params)
+
+    # Also count from active bookings with HP included
+    # (bookings where HP is part of the rate, not separately booked)
+    # This would need additional logic based on how HP is stored in bookings
+
+    total_persons = sum(m.get('anzahl', 0) for m in meals)
+    total_amount = sum(m.get('summe', 0) or 0 for m in meals)
+
+    return jsonify({
+        "datum": datum,
+        "total_persons": total_persons,
+        "total_amount": total_amount,
+        "details": [serialize_row(m) for m in meals]
+    })
+
+# ============================================================================
+# RECHNUNGS-STATISTIKEN
+# ============================================================================
+
+@flask_app.route('/invoices/stats')
+def get_invoice_stats():
+    """Umsatz-Statistiken für Finanz-App"""
+    year = request.args.get('year', type=int)
+
+    # Total invoices and revenue
+    if year:
+        query_total = """
+            SELECT COUNT(*) as count, SUM(ABS(pmv1) + ABS(pmv2) + ABS(pmv3)) as total
+            FROM REC WHERE YEAR(edat) = ?
+        """
+        totals = db_query(query_total, (year,), fetchone=True)
+    else:
+        query_total = """
+            SELECT COUNT(*) as count, SUM(ABS(pmv1) + ABS(pmv2) + ABS(pmv3)) as total
+            FROM REC
+        """
+        totals = db_query(query_total, fetchone=True)
+
+    # Revenue by payment type
+    query_by_payment = """
+        SELECT PMT.payt as zahlart, COUNT(*) as anzahl,
+               SUM(ABS(REC.pmv1) + ABS(REC.pmv2) + ABS(REC.pmv3)) as summe
+        FROM REC
+        LEFT JOIN PMT ON REC.pmt1 = PMT.paym
+        GROUP BY PMT.payt
+        ORDER BY summe DESC
+    """
+    by_payment = db_query(query_by_payment)
+
+    # Revenue by year
+    query_by_year = """
+        SELECT YEAR(edat) as jahr, COUNT(*) as anzahl,
+               SUM(ABS(pmv1) + ABS(pmv2) + ABS(pmv3)) as summe
+        FROM REC
+        GROUP BY YEAR(edat)
+        ORDER BY jahr DESC
+    """
+    by_year = db_query(query_by_year)
+
+    # Open invoices (payment type 1 = "Offene Forderung")
+    query_open = """
+        SELECT COUNT(*) as count, SUM(pmv1) as total
+        FROM REC WHERE pmt1 = 1
+    """
+    open_invoices = db_query(query_open, fetchone=True)
+
+    return jsonify({
+        "total_invoices": totals.get('count', 0) if totals else 0,
+        "total_revenue": totals.get('total', 0) if totals else 0,
+        "by_payment_type": [serialize_row(p) for p in by_payment],
+        "by_year": [serialize_row(y) for y in by_year],
+        "open_invoices": {
+            "count": open_invoices.get('count', 0) if open_invoices else 0,
+            "amount": open_invoices.get('total', 0) if open_invoices else 0
+        },
+        "filter_year": year
+    })
+
+@flask_app.route('/invoices/open')
+def get_open_invoices():
+    """Offene Rechnungen abrufen"""
+    query = """
+        SELECT REC.rnum, REC.edat, REC.gast, REC.pmv1,
+               GKT.vorn, GKT.nacn
+        FROM REC
+        LEFT JOIN GKT ON REC.gast = GKT.gast
+        WHERE REC.pmt1 = 1
+        ORDER BY REC.edat DESC
+    """
+    invoices = db_query(query)
+    total = sum(inv.get('pmv1', 0) or 0 for inv in invoices)
+
+    return jsonify({
+        "count": len(invoices),
+        "total_open": total,
+        "invoices": [serialize_row(inv) for inv in invoices]
+    })
+
+@flask_app.route('/payment-types')
+def get_payment_types():
+    """Alle Zahlarten abrufen"""
+    query = "SELECT paym, payt FROM PMT ORDER BY paym"
+    types = db_query(query)
+    return jsonify({
+        "count": len(types),
+        "payment_types": [serialize_row(t) for t in types]
+    })
+
+# ============================================================================
 # BACKUP API ENDPOINTS (GUI)
 # ============================================================================
 
@@ -951,28 +1378,283 @@ def backup_settings_api():
 
 firebase_db = None
 firebase_initialized = False
+firebase_error_message = None
+
+# ============================================================================
+# GUEST DEDUPLICATION HELPERS
+# ============================================================================
+
+def normalize_phone(phone):
+    """Normalisiert Telefonnummer: nur Ziffern, fuehrende 0 -> 43"""
+    if not phone:
+        return None
+    # Nur Ziffern behalten
+    cleaned = ''.join(c for c in str(phone) if c.isdigit())
+    if not cleaned:
+        return None
+    # Oesterreichische Nummern: fuehrende 0 durch 43 ersetzen
+    if cleaned.startswith('0') and not cleaned.startswith('00'):
+        cleaned = '43' + cleaned[1:]
+    # 00 am Anfang entfernen (internationales Format)
+    if cleaned.startswith('00'):
+        cleaned = cleaned[2:]
+    # Mindestlaenge pruefen
+    if len(cleaned) < 8:
+        return None
+    return cleaned
+
+def normalize_email(email):
+    """Normalisiert Email: Kleinschreibung, trimmen"""
+    if not email:
+        return None
+    cleaned = str(email).lower().strip()
+    if '@' not in cleaned or '.' not in cleaned:
+        return None
+    return cleaned
+
+def get_guest_key(guest):
+    """Erstellt eindeutigen Schluessel fuer Gast basierend auf Telefon oder Email"""
+    phone = normalize_phone(guest.get('teln'))
+    email = normalize_email(guest.get('mail'))
+
+    # Prioritaet: Telefon > Email > CapHotel-ID als Fallback
+    if phone:
+        return ('phone', phone)
+    if email:
+        return ('email', email)
+    # Fallback: keine Deduplizierung moeglich
+    return ('caphotel', str(guest.get('gast', 0)))
+
+def get_next_customer_number():
+    """Holt die naechste Kundennummer mit Firestore Transaction"""
+    try:
+        counter_ref = firebase_db.collection('counters').document('guests')
+
+        @firestore.transactional
+        def update_counter(transaction):
+            snapshot = counter_ref.get(transaction=transaction)
+            if snapshot.exists:
+                current = snapshot.to_dict().get('lastNumber', 100000)
+            else:
+                current = 100000
+            next_number = current + 1
+            transaction.set(counter_ref, {'lastNumber': next_number})
+            return next_number
+
+        transaction = firebase_db.transaction()
+        return update_counter(transaction)
+    except Exception as e:
+        print(f"Error getting next customer number: {e}")
+        # Fallback: Use timestamp-based number
+        import random
+        return 100000 + random.randint(1, 99999)
+
+def merge_guest_profiles(profiles, bookings_data):
+    """Merged mehrere CapHotel-Profile zu einem deduplizierten Gast"""
+    if not profiles:
+        return None
+
+    # Basis-Daten vom neuesten Profil (hoechste gast-ID)
+    profiles_sorted = sorted(profiles, key=lambda p: p.get('gast', 0), reverse=True)
+    newest = profiles_sorted[0]
+
+    merged = {
+        'firstName': '',
+        'lastName': '',
+        'email': None,
+        'phone': None,
+        'street': None,
+        'postalCode': None,
+        'city': None,
+        'country': None,
+        'caphotelGuestIds': [],
+        'totalBookings': 0,
+        'totalRevenue': 0,
+        'lastBooking': None
+    }
+
+    # Alle Felder von allen Profilen sammeln (nicht-leere Werte bevorzugen)
+    for p in profiles_sorted:
+        merged['caphotelGuestIds'].append(p.get('gast'))
+
+        if p.get('vorn') and not merged['firstName']:
+            merged['firstName'] = p.get('vorn', '')
+        if p.get('nacn') and not merged['lastName']:
+            merged['lastName'] = p.get('nacn', '')
+        if p.get('mail') and not merged['email']:
+            merged['email'] = p.get('mail')
+        if p.get('teln') and not merged['phone']:
+            merged['phone'] = p.get('teln')
+        if p.get('stra') and not merged['street']:
+            merged['street'] = p.get('stra')
+        if p.get('polz') and not merged['postalCode']:
+            merged['postalCode'] = p.get('polz')
+        if p.get('ortb') and not merged['city']:
+            merged['city'] = p.get('ortb')
+        if p.get('land') and not merged['country']:
+            merged['country'] = p.get('land')
+
+    # Buchungen fuer alle Profile zaehlen
+    caphotel_ids = set(merged['caphotelGuestIds'])
+    for booking in bookings_data:
+        if booking.get('gast') in caphotel_ids:
+            merged['totalBookings'] += 1
+            merged['totalRevenue'] += booking.get('accountTotal', 0) or 0
+            booking_date = booking.get('andf')
+            if booking_date:
+                if isinstance(booking_date, datetime):
+                    booking_date = booking_date.isoformat()
+                if not merged['lastBooking'] or booking_date > merged['lastBooking']:
+                    merged['lastBooking'] = str(booking_date)
+
+    return merged
+
+def deduplicate_and_sync_guests(bookings_data):
+    """Dedupliziert Gaeste und synchronisiert zu Firestore"""
+    if not firebase_initialized or not firebase_db:
+        print("[Dedup] Firebase nicht initialisiert")
+        return {"success": False, "error": "Firebase nicht initialisiert"}
+
+    try:
+        now = datetime.now().isoformat()
+        print(f"[Dedup] Starting guest deduplication...")
+
+        # 1. Alle Gaeste aus CapHotel laden
+        query = """
+            SELECT gast, vorn, nacn, mail, teln, stra, polz, ortb, land
+            FROM GKT
+        """
+        all_guests = db_query(query)
+        print(f"[Dedup] Loaded {len(all_guests)} guest profiles from CapHotel")
+
+        # 2. Nach normalisierter Telefon/Email gruppieren
+        groups = {}
+        for guest in all_guests:
+            key_type, key_value = get_guest_key(guest)
+            key = f"{key_type}:{key_value}"
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(guest)
+
+        print(f"[Dedup] Grouped into {len(groups)} unique guests")
+
+        # 3. Bestehende Lookups laden
+        existing_lookups = {}
+        try:
+            lookups_ref = firebase_db.collection('guestLookup')
+            for doc in lookups_ref.stream():
+                existing_lookups[doc.id] = doc.to_dict()
+        except Exception as e:
+            print(f"[Dedup] Error loading existing lookups: {e}")
+
+        # 4. Fuer jede Gruppe: Gast in Firestore anlegen/updaten
+        created = 0
+        updated = 0
+
+        for key, profiles in groups.items():
+            key_type, key_value = key.split(':', 1)
+            lookup_id = f"{key_type}_{key_value}"
+
+            # Merged guest data erstellen
+            merged = merge_guest_profiles(profiles, bookings_data)
+            if not merged:
+                continue
+
+            # Normalisierte Kontaktdaten hinzufuegen
+            if key_type == 'phone':
+                merged['phoneNormalized'] = key_value
+            elif key_type == 'email':
+                merged['emailNormalized'] = key_value
+
+            # Lookup pruefen ob Gast bereits existiert
+            if lookup_id in existing_lookups:
+                # Gast existiert - updaten
+                lookup_data = existing_lookups[lookup_id]
+                guest_id = lookup_data.get('guestId')
+                customer_number = lookup_data.get('customerNumber')
+
+                # Guest-Dokument updaten
+                merged['id'] = guest_id
+                merged['customerNumber'] = customer_number
+                merged['updatedAt'] = now
+
+                try:
+                    firebase_db.collection('guests').document(guest_id).update(merged)
+                    updated += 1
+                except Exception as e:
+                    print(f"[Dedup] Error updating guest {guest_id}: {e}")
+            else:
+                # Neuer Gast - anlegen
+                customer_number = get_next_customer_number()
+                guest_id = f"G{customer_number}"
+
+                merged['id'] = guest_id
+                merged['customerNumber'] = customer_number
+                merged['createdAt'] = now
+                merged['updatedAt'] = now
+
+                try:
+                    # Guest-Dokument anlegen
+                    firebase_db.collection('guests').document(guest_id).set(merged)
+
+                    # Lookup anlegen (nur fuer phone/email, nicht fuer caphotel fallback)
+                    if key_type in ('phone', 'email'):
+                        firebase_db.collection('guestLookup').document(lookup_id).set({
+                            'guestId': guest_id,
+                            'customerNumber': customer_number
+                        })
+
+                    created += 1
+                except Exception as e:
+                    print(f"[Dedup] Error creating guest {guest_id}: {e}")
+
+        print(f"[Dedup] Completed: {created} created, {updated} updated")
+
+        return {
+            "success": True,
+            "total_profiles": len(all_guests),
+            "deduplicated_guests": len(groups),
+            "created": created,
+            "updated": updated
+        }
+
+    except Exception as e:
+        print(f"[Dedup] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
 
 def init_firebase():
-    """Initialize Firebase with Application Default Credentials"""
-    global firebase_db, firebase_initialized
+    """Initialize Firebase with Service Account Key (firebase-key.json)"""
+    global firebase_db, firebase_initialized, firebase_error_message
 
     if firebase_initialized:
         return True
 
     try:
-        # Try to initialize with default credentials (gcloud auth)
+        # Check if firebase-key.json exists
+        if not os.path.exists(FIREBASE_KEY_PATH):
+            firebase_error_message = f"firebase-key.json nicht gefunden: {FIREBASE_KEY_PATH}"
+            print(f"[Firebase] WARNUNG: {firebase_error_message}")
+            print("[Firebase] Bitte firebase-key.json neben die .exe kopieren")
+            return False
+
+        # Initialize with Service Account Key
         if not firebase_admin._apps:
-            firebase_admin.initialize_app(options={
+            cred = credentials.Certificate(FIREBASE_KEY_PATH)
+            firebase_admin.initialize_app(cred, options={
                 'projectId': config['firebase_project_id']
             })
 
         firebase_db = firestore.client()
         firebase_initialized = True
-        print("Firebase initialized successfully")
+        firebase_error_message = None
+        print(f"[Firebase] Erfolgreich initialisiert mit Service Account Key")
         return True
 
     except Exception as e:
-        print(f"Firebase init error: {e}")
+        firebase_error_message = str(e)
+        print(f"[Firebase] Init-Fehler: {e}")
         return False
 
 def sync_to_firebase():
@@ -986,22 +1668,33 @@ def sync_to_firebase():
         results = {
             "bookings": 0,
             "guests": 0,
+            "deduplicated_guests": 0,
             "articles": 0,
             "rooms": 0,
             "channels": 0
         }
 
-        # Sync Bookings
+        # Sync Bookings (with account totals for deduplication stats)
+        bookings_data = []
         try:
             query = """
                 SELECT TOP 1000 BUC.resn, BUC.gast, BUC.stat, BUC.andf, BUC.ande, BUC.chid,
-                       GKT.vorn, GKT.nacn, GKT.mail
-                FROM BUC LEFT JOIN GKT ON BUC.gast = GKT.gast
+                       BUC.extn, GKT.vorn, GKT.nacn, GKT.mail, CHC.name as channelName
+                FROM (BUC LEFT JOIN GKT ON BUC.gast = GKT.gast)
+                LEFT JOIN CHC ON BUC.chid = CHC.chid
                 ORDER BY BUC.resn DESC
             """
             bookings = db_query(query)
             bookings_data = [serialize_row(b) for b in bookings]
+
+            # Kontosummen fuer jede Buchung laden
             for b in bookings_data:
+                try:
+                    account_query = "SELECT SUM(prei) as total FROM AKZ WHERE resn = ?"
+                    account = db_query(account_query, (b['resn'],), fetchone=True)
+                    b['accountTotal'] = account.get('total') if account else 0
+                except:
+                    b['accountTotal'] = 0
                 b['syncedAt'] = now
 
             firebase_db.collection('caphotelSync').document('bookings').set({
@@ -1013,7 +1706,7 @@ def sync_to_firebase():
         except Exception as e:
             print(f"Bookings sync error: {e}")
 
-        # Sync Guests
+        # Sync Guests (raw data for caphotelSync)
         try:
             query = """
                 SELECT TOP 2000 gast, vorn, nacn, mail, teln, stra, polz, ortb, land
@@ -1032,6 +1725,15 @@ def sync_to_firebase():
             results['guests'] = len(guests_data)
         except Exception as e:
             print(f"Guests sync error: {e}")
+
+        # Deduplicate guests and sync to 'guests' collection
+        try:
+            dedup_result = deduplicate_and_sync_guests(bookings_data)
+            if dedup_result.get('success'):
+                results['deduplicated_guests'] = dedup_result.get('deduplicated_guests', 0)
+                print(f"[Sync] Deduplicated {results['deduplicated_guests']} guests")
+        except Exception as e:
+            print(f"Guest deduplication error: {e}")
 
         # Sync Articles
         try:
@@ -1091,6 +1793,7 @@ def sync_to_firebase():
             'syncInProgress': False,
             'bookingsCount': results['bookings'],
             'guestsCount': results['guests'],
+            'deduplicatedGuestsCount': results['deduplicated_guests'],
             'autoSyncEnabled': config.get('auto_sync', True),
             'autoSyncInterval': config.get('sync_interval', 15),
             'syncSource': 'bridge'
@@ -1561,7 +2264,12 @@ class BridgeApp:
             start_auto_sync()
             self.root.after(0, lambda: self.update_sync_status("Auto-Sync aktiv"))
         else:
-            self.root.after(0, lambda: self.update_sync_status("Firebase-Fehler - bitte gcloud auth"))
+            # Show specific error message
+            if firebase_error_message and "nicht gefunden" in firebase_error_message:
+                self.root.after(0, lambda: self.update_sync_status("firebase-key.json fehlt!"))
+            else:
+                error_msg = firebase_error_message or "Unbekannter Fehler"
+                self.root.after(0, lambda: self.update_sync_status(f"Firebase-Fehler: {error_msg[:30]}"))
 
         # Start auto-backup
         if config.get('backup_enabled', True):
@@ -1687,7 +2395,7 @@ class BridgeApp:
         info_tab = ttk.Frame(notebook, padding="15")
         notebook.add(info_tab, text="Info")
 
-        ttk.Label(info_tab, text="CapCorn Bridge v4.0", font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W)
+        ttk.Label(info_tab, text="CapCorn Bridge v4.2", font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W)
         ttk.Label(info_tab, text="Datenbank-Synchronisation & Backup fuer Hotel Stadler",
                   font=('Segoe UI', 10)).pack(anchor=tk.W, pady=(5, 20))
 
