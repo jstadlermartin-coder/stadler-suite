@@ -66,6 +66,18 @@ service cloud.firestore {
       allow write: if isHotelUser();
     }
 
+    // Guest Lookup collection (for phone/email deduplication)
+    match /guestLookup/{lookupId} {
+      allow read: if isAuthenticated();
+      allow write: if isHotelUser();
+    }
+
+    // Counters collection (for customer number generation)
+    match /counters/{counterId} {
+      allow read: if isAuthenticated();
+      allow write: if isHotelUser();
+    }
+
     // Deny all other access by default
     match /{document=**} {
       allow read, write: if false;
