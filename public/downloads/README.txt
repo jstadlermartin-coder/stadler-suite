@@ -1,6 +1,7 @@
 ============================================================
-  CapCorn Bridge v4.1
+  CapCorn Bridge v4.3.0
   Hotel Stadler - Datenbank-Synchronisation & Backup
+  Stand: 20.01.2026
 ============================================================
 
 BESCHREIBUNG
@@ -93,4 +94,21 @@ Web-App: https://stadler-suite.web.app
 GitHub:  https://github.com/jstadlermartin-coder/stadler-suite
 
 
-(c) 2024-2025 Hotel Stadler am Attersee
+CHANGELOG
+---------
+v4.3.0 (20.01.2026)
+- OTA-Support: Externe Buchungsnummer (extn) wird synchronisiert
+- Channel-Name (Booking.com, Expedia etc.) wird angezeigt
+- Versionsnummer in Fenster-Titel und System-Tray sichtbar
+
+v4.2.0 (13.01.2026)
+- Deduplizierte Gaeste mit 6-stelliger Kundennummer
+- Automatische Gast-Zusammenfuehrung nach Telefon/Email
+
+v4.1.0 (03.01.2026)
+- Erste Version mit GUI
+- System-Tray Support
+- Automatischer Firebase-Sync
+
+
+(c) 2024-2026 Hotel Stadler am Attersee

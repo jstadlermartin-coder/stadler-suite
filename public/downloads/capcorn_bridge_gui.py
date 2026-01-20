@@ -5,8 +5,13 @@ CapCorn Bridge - Background Service Version
 REST API + automatischer Firebase-Sync im Hintergrund.
 Laeuft im System-Tray und startet automatisch mit Windows.
 
-(c) 2024 - Hotel Stadler Bridge
+(c) 2024-2026 - Hotel Stadler Bridge
 """
+
+# ============================================================================
+# VERSION
+# ============================================================================
+BRIDGE_VERSION = "4.3.0"  # 2026-01-20: OTA-Support (extn, channelName)
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -204,7 +209,7 @@ def serialize_row(row):
 def index():
     return jsonify({
         "name": "CapCorn Bridge API",
-        "version": "4.2.0",
+        "version": BRIDGE_VERSION,
         "status": "running",
         "database": config['database_path'],
         "timestamp": datetime.now().isoformat(),
@@ -2218,7 +2223,7 @@ def setup_tray():
         pystray.MenuItem("Beenden", quit_app)
     )
 
-    tray_icon = pystray.Icon("CapCornBridge", image, "CapCorn Bridge", menu)
+    tray_icon = pystray.Icon("CapCornBridge", image, f"CapCorn Bridge v{BRIDGE_VERSION}", menu)
 
     # Run tray in background thread
     threading.Thread(target=tray_icon.run, daemon=True).start()
@@ -2230,7 +2235,7 @@ def setup_tray():
 class BridgeApp:
     def __init__(self, root, start_minimized=False):
         self.root = root
-        self.root.title("CapCorn Bridge - Einstellungen")
+        self.root.title(f"CapCorn Bridge v{BRIDGE_VERSION} - Einstellungen")
         self.root.geometry("600x580")
         self.root.resizable(False, False)
 
@@ -2395,7 +2400,7 @@ class BridgeApp:
         info_tab = ttk.Frame(notebook, padding="15")
         notebook.add(info_tab, text="Info")
 
-        ttk.Label(info_tab, text="CapCorn Bridge v4.2", font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W)
+        ttk.Label(info_tab, text=f"CapCorn Bridge v{BRIDGE_VERSION}", font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W)
         ttk.Label(info_tab, text="Datenbank-Synchronisation & Backup fuer Hotel Stadler",
                   font=('Segoe UI', 10)).pack(anchor=tk.W, pady=(5, 20))
 
