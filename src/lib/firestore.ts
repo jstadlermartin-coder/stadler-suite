@@ -263,6 +263,49 @@ export async function saveSeasons(seasons: Season[]): Promise<boolean> {
   }
 }
 
+// ============ ARTICLES (App-eigene Artikel) ============
+
+export interface AppArticle {
+  id: string;
+  name: string;
+  description?: string;
+  photos?: string[];
+  basePrice: number;
+  priceUnit: 'pro_nacht' | 'pro_aufenthalt' | 'pro_stueck' | 'pro_person_nacht';
+  hasSeasonalPricing: boolean;
+  seasonPrices?: { seasonId: string; basePrice: number }[];
+  hasAgePricing: boolean;
+  agePrices?: { id: string; ageFrom: number; ageTo: number; price: number }[];
+  isOrtstaxe: boolean;
+  ortstaxeMinAge?: number;
+  active: boolean;
+}
+
+export async function getAppArticles(): Promise<AppArticle[]> {
+  try {
+    const docRef = doc(db, 'settings', 'articles');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data().items as AppArticle[];
+    }
+    return [];
+  } catch (error) {
+    console.error('Error getting articles:', error);
+    return [];
+  }
+}
+
+export async function saveAppArticles(articles: AppArticle[]): Promise<boolean> {
+  try {
+    const docRef = doc(db, 'settings', 'articles');
+    await setDoc(docRef, { items: articles, updatedAt: new Date().toISOString() });
+    return true;
+  } catch (error) {
+    console.error('Error saving articles:', error);
+    return false;
+  }
+}
+
 // ============ GUESTS ============
 
 export async function getGuests(): Promise<Guest[]> {

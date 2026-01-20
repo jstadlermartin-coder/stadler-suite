@@ -9,6 +9,9 @@ import {
   saveSeasons,
   getBuildings,
   saveBuildings,
+  getAppArticles,
+  saveAppArticles,
+  AppArticle,
   getLeadLinks,
   addLeadLink,
   deleteLeadLink,
@@ -439,11 +442,12 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     const loadData = async () => {
       try {
         setLoading(true);
-        const [settings, bridgeMappings, savedSyncStatus, savedBuildings] = await Promise.all([
+        const [settings, bridgeMappings, savedSyncStatus, savedBuildings, savedArticles] = await Promise.all([
           loadAllSettings(),
           getBridgeMappings(),
           getSyncStatus(),
-          getBuildings()
+          getBuildings(),
+          getAppArticles()
         ]);
 
         if (settings.hotelInfo) {
@@ -476,6 +480,11 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
         // Load buildings
         if (savedBuildings && savedBuildings.length > 0) {
           setBuildings(savedBuildings as Building[]);
+        }
+
+        // Load articles
+        if (savedArticles && savedArticles.length > 0) {
+          setArticles(savedArticles as Article[]);
         }
 
         // Load lead links
@@ -1471,7 +1480,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     });
   };
 
-  const handleSaveArticle = () => {
+  const handleSaveArticle = async () => {
     if (!newArticle.name?.trim()) return;
 
     const article: Article = {
@@ -1489,11 +1498,15 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
       active: newArticle.active !== false
     };
 
+    let newArticles: Article[];
     if (editingArticle) {
-      setArticles(articles.map(a => a.id === editingArticle.id ? article : a));
+      newArticles = articles.map(a => a.id === editingArticle.id ? article : a);
     } else {
-      setArticles([...articles, article]);
+      newArticles = [...articles, article];
     }
+
+    setArticles(newArticles);
+    await saveAppArticles(newArticles as AppArticle[]);
 
     setArticleDrawerOpen(false);
     setEditingArticle(null);
@@ -1503,9 +1516,11 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     setDeleteArticleConfirm({ id: article.id, name: article.name });
   };
 
-  const confirmDeleteArticle = () => {
+  const confirmDeleteArticle = async () => {
     if (!deleteArticleConfirm) return;
-    setArticles(articles.filter(a => a.id !== deleteArticleConfirm.id));
+    const newArticles = articles.filter(a => a.id !== deleteArticleConfirm.id);
+    setArticles(newArticles);
+    await saveAppArticles(newArticles as AppArticle[]);
     setDeleteArticleConfirm(null);
   };
 
