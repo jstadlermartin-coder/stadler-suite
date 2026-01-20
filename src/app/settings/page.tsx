@@ -2989,6 +2989,9 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                           <div className="flex items-center gap-2 mb-2">
                             <Box className="w-6 h-6" />
                             <h3 className="text-xl font-semibold">CapCornBridge.exe</h3>
+                            <span className="bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded">
+                              v4.3.0
+                            </span>
                           </div>
                           <p className="text-blue-100 mb-2">
                             Eine Datei - kein Python noetig!
@@ -2996,13 +2999,16 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                           <div className="flex flex-wrap gap-3 text-sm text-blue-200">
                             <div className="flex items-center gap-1">
                               <CheckCircle2 className="w-4 h-4" />
-                              <span>Mit Backup-Agent</span>
+                              <span>OTA-Support (Booking.com, Expedia)</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <CheckCircle2 className="w-4 h-4" />
                               <span>~33 MB</span>
                             </div>
                           </div>
+                          <p className="text-xs text-blue-200 mt-2">
+                            Stand: 20.01.2026
+                          </p>
                         </div>
                         <button
                           onClick={() => handleBridgeDownload('CapCornBridge.exe')}
