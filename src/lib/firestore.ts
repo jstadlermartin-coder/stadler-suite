@@ -94,6 +94,49 @@ export interface Guest {
   createdAt?: string;
 }
 
+// Deduplizierter Gast aus der Python Bridge
+export interface DeduplicatedGuest {
+  id: string;                    // "G100001"
+  customerNumber: number;        // 100001 (6-stellig)
+
+  // Normalisierte Kontaktdaten (für Matching)
+  phoneNormalized?: string;      // "436641234567"
+  emailNormalized?: string;      // "max@example.com"
+
+  // Anzeige-Daten
+  firstName: string;
+  lastName: string;
+  email?: string;
+  phone?: string;
+  street?: string;
+  postalCode?: string;
+  city?: string;
+  country?: string;
+
+  // CapHotel-Referenzen
+  caphotelGuestIds: number[];    // [1234, 5678] - alle zusammengeführten Profile
+
+  // Statistiken
+  totalBookings: number;
+  totalRevenue: number;
+  lastBooking?: string;
+
+  // Metadata
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Guest Lookup für schnelle Suche
+export interface GuestLookup {
+  guestId: string;
+  customerNumber: number;
+}
+
+// Guest Counter für Kundennummer
+export interface GuestCounter {
+  lastNumber: number;
+}
+
 export interface Booking {
   id: string;
   guestId?: string;
@@ -270,6 +313,55 @@ export async function deleteGuest(id: string): Promise<boolean> {
   }
 }
 
+// ============ DEDUPLICATED GUESTS (from Bridge) ============
+
+export async function getDeduplicatedGuests(): Promise<DeduplicatedGuest[]> {
+  try {
+    const querySnapshot = await getDocs(collection(db, 'guests'));
+    const guests: DeduplicatedGuest[] = [];
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      // Check if this is a deduplicated guest (has customerNumber)
+      if (data.customerNumber) {
+        guests.push({ id: docSnap.id, ...data } as DeduplicatedGuest);
+      }
+    });
+    return guests;
+  } catch (error) {
+    console.error('Error getting deduplicated guests:', error);
+    return [];
+  }
+}
+
+export async function getDeduplicatedGuestById(guestId: string): Promise<DeduplicatedGuest | null> {
+  try {
+    const docRef = doc(db, 'guests', guestId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as DeduplicatedGuest;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting deduplicated guest:', error);
+    return null;
+  }
+}
+
+export async function getGuestByLookup(lookupType: 'phone' | 'email', lookupValue: string): Promise<GuestLookup | null> {
+  try {
+    const lookupId = `${lookupType}_${lookupValue}`;
+    const docRef = doc(db, 'guestLookup', lookupId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data() as GuestLookup;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting guest lookup:', error);
+    return null;
+  }
+}
+
 // ============ BOOKINGS ============
 
 export async function getBookings(): Promise<Booking[]> {
@@ -426,15 +518,16 @@ export async function saveArticleMappings(articles: ArticleMapping[]): Promise<b
 // ============ CAPHOTEL SYNC DATA ============
 
 export interface CaphotelBooking {
-  resn: number;              // Reservierungsnummer
+  resn: number;              // Reservierungsnummer (5-stellig, Hauptnummer)
   gast: number;              // Gast-ID
   stat: number;              // Status
   andf: string;              // Anreise
   ande: string;              // Abreise
   chid: number;              // Channel ID
+  extn?: string;             // Externe Buchungsnummer (Booking.com, Expedia etc.)
   guestName?: string;        // Gastname (joined)
   guestEmail?: string;       // E-Mail
-  channelName?: string;      // Channel Name
+  channelName?: string;      // Channel Name (z.B. "Booking.com", "Expedia", "Direkt")
   rooms?: CaphotelBookingRoom[];
   account?: CaphotelAccountPosition[];
   accountTotal?: number;
@@ -826,5 +919,153 @@ export async function getLeadSubmissions(): Promise<LeadSubmission[]> {
   } catch (error) {
     console.error('Error getting lead submissions:', error);
     return [];
+  }
+}
+
+// ============ GUEST NOTIFICATION SETTINGS ============
+
+export type NotificationChannel = 'whatsapp' | 'email' | 'sms' | 'push';
+
+export interface EventChannelSettings {
+  whatsapp: boolean;
+  email: boolean;
+  push: boolean;
+  sms: boolean;
+}
+
+export interface GuestNotificationSettings {
+  // Ereignis-Toggles
+  events: {
+    confirmation: EventChannelSettings;
+    changes: EventChannelSettings;
+    cancellation: EventChannelSettings;
+    reminder: EventChannelSettings & {
+      hours: number; // Stunden vorher
+    };
+    review: EventChannelSettings & {
+      hours: number; // Stunden nachher
+      url: string; // Bewertungslink
+    };
+  };
+
+  // Twilio SMS Einstellungen
+  twilio: {
+    enabled: boolean;
+    accountSid: string;
+    authToken: string;
+    phoneNumber: string;
+    verified: boolean;
+  };
+
+  // Push Einstellungen
+  push: {
+    enabled: boolean; // Gäste werden gefragt
+    registeredDevices: number;
+  };
+
+  // Fallback Einstellungen
+  fallback: {
+    enabled: boolean;
+    priority: NotificationChannel[];
+    rememberSuccessfulChannel: boolean;
+  };
+
+  // Nachrichtentexte
+  messageTemplates: {
+    confirmation: {
+      whatsapp: string;
+      sms: string;
+    };
+    changes: {
+      whatsapp: string;
+      sms: string;
+    };
+    cancellation: {
+      whatsapp: string;
+      sms: string;
+    };
+    reminder: {
+      whatsapp: string;
+      sms: string;
+    };
+    review: {
+      whatsapp: string;
+      sms: string;
+    };
+  };
+
+  updatedAt?: string;
+}
+
+export const DEFAULT_GUEST_NOTIFICATION_SETTINGS: GuestNotificationSettings = {
+  events: {
+    confirmation: { whatsapp: true, email: true, push: false, sms: false },
+    changes: { whatsapp: true, email: true, push: false, sms: false },
+    cancellation: { whatsapp: true, email: true, push: false, sms: false },
+    reminder: { whatsapp: true, email: false, push: true, sms: false, hours: 24 },
+    review: { whatsapp: false, email: true, push: false, sms: false, hours: 48, url: '' },
+  },
+  twilio: {
+    enabled: false,
+    accountSid: '',
+    authToken: '',
+    phoneNumber: '',
+    verified: false,
+  },
+  push: {
+    enabled: false,
+    registeredDevices: 0,
+  },
+  fallback: {
+    enabled: true,
+    priority: ['whatsapp', 'email', 'push', 'sms'],
+    rememberSuccessfulChannel: true,
+  },
+  messageTemplates: {
+    confirmation: {
+      whatsapp: 'Hallo {guestName}! Ihre Reservierung im {hotelName} vom {checkIn} bis {checkOut} wurde bestätigt. Wir freuen uns auf Sie!',
+      sms: 'Reservierung bestätigt: {hotelName} vom {checkIn}-{checkOut}. Wir freuen uns auf Sie!',
+    },
+    changes: {
+      whatsapp: 'Hallo {guestName}! Ihre Reservierung im {hotelName} wurde geändert. Neuer Zeitraum: {checkIn} bis {checkOut}.',
+      sms: 'Reservierung geändert: {hotelName} {checkIn}-{checkOut}',
+    },
+    cancellation: {
+      whatsapp: 'Hallo {guestName}! Ihre Reservierung im {hotelName} vom {checkIn} bis {checkOut} wurde storniert. Bei Fragen kontaktieren Sie uns gerne.',
+      sms: 'Reservierung storniert: {hotelName} {checkIn}-{checkOut}',
+    },
+    reminder: {
+      whatsapp: 'Hallo {guestName}! Wir freuen uns, Sie morgen im {hotelName} begrüßen zu dürfen. Check-in ist ab 15:00 Uhr möglich.',
+      sms: 'Erinnerung: Check-in morgen im {hotelName} ab 15:00 Uhr',
+    },
+    review: {
+      whatsapp: 'Hallo {guestName}! Vielen Dank für Ihren Aufenthalt im {hotelName}. Wir würden uns über Ihre Bewertung freuen: {reviewUrl}',
+      sms: 'Danke für Ihren Aufenthalt im {hotelName}! Bewertung: {reviewUrl}',
+    },
+  },
+};
+
+export async function getGuestNotificationSettings(): Promise<GuestNotificationSettings> {
+  try {
+    const docRef = doc(db, 'settings', 'guestNotifications');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { ...DEFAULT_GUEST_NOTIFICATION_SETTINGS, ...docSnap.data() } as GuestNotificationSettings;
+    }
+    return DEFAULT_GUEST_NOTIFICATION_SETTINGS;
+  } catch (error) {
+    console.error('Error getting guest notification settings:', error);
+    return DEFAULT_GUEST_NOTIFICATION_SETTINGS;
+  }
+}
+
+export async function saveGuestNotificationSettings(settings: GuestNotificationSettings): Promise<boolean> {
+  try {
+    const docRef = doc(db, 'settings', 'guestNotifications');
+    await setDoc(docRef, { ...settings, updatedAt: new Date().toISOString() });
+    return true;
+  } catch (error) {
+    console.error('Error saving guest notification settings:', error);
+    return false;
   }
 }

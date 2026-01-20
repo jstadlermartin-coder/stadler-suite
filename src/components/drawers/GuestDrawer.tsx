@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { X, User, Mail, Phone, MapPin, Calendar, ChevronRight, FileText } from 'lucide-react';
+import { X, User, Mail, Phone, MapPin, Calendar, ChevronRight, FileText, Hash } from 'lucide-react';
+import { getSyncedBookings, CaphotelBooking } from '@/lib/firestore';
 
-// Types
+// Types - Extended for deduplicated guests
 interface Guest {
   id: string;
+  customerNumber?: number;        // Kundennummer (6-stellig)
   firstName: string;
   lastName: string;
   email?: string;
@@ -14,6 +16,9 @@ interface Guest {
   city?: string;
   country?: string;
   postalCode?: string;
+  caphotelGuestIds?: number[];    // CapHotel-Profile IDs
+  totalBookings?: number;
+  totalRevenue?: number;
 }
 
 interface Booking {
@@ -27,8 +32,32 @@ interface Booking {
   status: 'confirmed' | 'pending' | 'checked-in' | 'checked-out' | 'cancelled';
   totalPrice?: number;
   source?: string;
+  externalRef?: string;      // Externe Buchungsnummer (Booking.com, Expedia etc.)
   adults?: number;
   children?: number;
+}
+
+// OTA Badge Component
+function OTABadge({ channelName, externalRef }: { channelName?: string, externalRef?: string }) {
+  if (!channelName || channelName === 'Direkt' || !externalRef) return null;
+
+  const isBookingCom = channelName.toLowerCase().includes('booking');
+  const isExpedia = channelName.toLowerCase().includes('expedia');
+  const isAirbnb = channelName.toLowerCase().includes('airbnb');
+  const isHRS = channelName.toLowerCase().includes('hrs');
+
+  let badgeClass = 'bg-slate-500 text-white';
+  if (isBookingCom) badgeClass = 'bg-blue-600 text-white';
+  else if (isExpedia) badgeClass = 'bg-yellow-500 text-black';
+  else if (isAirbnb) badgeClass = 'bg-rose-500 text-white';
+  else if (isHRS) badgeClass = 'bg-red-600 text-white';
+
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${badgeClass}`}>
+      {channelName}
+      <span className="opacity-75">#{externalRef}</span>
+    </span>
+  );
 }
 
 // Context
@@ -200,12 +229,22 @@ function BookingDetailDrawer({
             </div>
           )}
 
-          {/* Quelle */}
+          {/* Quelle / OTA */}
           {booking.source && (
             <div>
               <h3 className="text-sm font-medium text-slate-500 mb-3">Buchungsquelle</h3>
               <div className="bg-slate-50 rounded-xl p-4">
-                <p className="font-medium text-slate-900">{booking.source}</p>
+                {booking.externalRef ? (
+                  <div className="space-y-2">
+                    <OTABadge
+                      channelName={booking.source}
+                      externalRef={booking.externalRef}
+                    />
+                    <p className="text-xs text-slate-500">Externe Referenz: {booking.externalRef}</p>
+                  </div>
+                ) : (
+                  <p className="font-medium text-slate-900">{booking.source}</p>
+                )}
               </div>
             </div>
           )}
@@ -229,41 +268,68 @@ export function GuestDrawer() {
   useEffect(() => {
     if (guest && isOpen) {
       setLoadingBookings(true);
-      // TODO: Echte Buchungen von Bridge API laden
-      // Simulierte Buchungen für Demo
-      setTimeout(() => {
-        setBookings([
-          {
-            id: '1',
-            bookingNumber: '12345',
-            guestId: guest.id,
-            roomNumber: '101',
-            roomName: 'Doppelzimmer Seeblick',
-            checkIn: '15.01.2025',
-            checkOut: '18.01.2025',
-            status: 'confirmed',
-            totalPrice: 450,
-            source: 'Booking.com',
-            adults: 2,
-            children: 0
-          },
-          {
-            id: '2',
-            bookingNumber: '11234',
-            guestId: guest.id,
-            roomNumber: '203',
-            roomName: 'Suite Bergblick',
-            checkIn: '10.06.2024',
-            checkOut: '15.06.2024',
-            status: 'checked-out',
-            totalPrice: 890,
-            source: 'Direkt',
-            adults: 2,
-            children: 1
-          }
-        ]);
-        setLoadingBookings(false);
-      }, 500);
+
+      // Echte Buchungen aus Firestore laden
+      const loadBookings = async () => {
+        try {
+          const syncedBookings = await getSyncedBookings();
+
+          // Buchungen nach caphotelGuestIds filtern
+          const caphotelIds = guest.caphotelGuestIds || [];
+          const guestBookings = syncedBookings
+            .filter((b: CaphotelBooking) => caphotelIds.includes(b.gast))
+            .map((b: CaphotelBooking): Booking => {
+              // Status mapping: CapHotel stat codes
+              let status: Booking['status'] = 'confirmed';
+              if (b.stat === 65536) status = 'cancelled';
+              else if (b.stat === 64) status = 'confirmed';
+              else if (b.stat === 2) status = 'pending';
+
+              // Datum formatieren
+              const formatDate = (dateStr: string | undefined) => {
+                if (!dateStr) return '-';
+                try {
+                  return new Date(dateStr).toLocaleDateString('de-DE', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                  });
+                } catch {
+                  return dateStr;
+                }
+              };
+
+              return {
+                id: String(b.resn),
+                bookingNumber: String(b.resn),
+                guestId: guest.id,
+                roomNumber: b.rooms?.[0]?.zimm?.toString() || '-',
+                roomName: undefined,
+                checkIn: formatDate(b.andf),
+                checkOut: formatDate(b.ande),
+                status,
+                totalPrice: b.accountTotal || 0,
+                source: b.channelName || 'Direkt',
+                externalRef: b.extn,
+                adults: b.rooms?.[0]?.pers || 1,
+                children: b.rooms?.[0]?.kndr || 0
+              };
+            })
+            .sort((a, b) => {
+              // Nach Buchungsnummer sortieren (neueste zuerst)
+              return Number(b.bookingNumber) - Number(a.bookingNumber);
+            });
+
+          setBookings(guestBookings);
+        } catch (error) {
+          console.error('Error loading bookings:', error);
+          setBookings([]);
+        } finally {
+          setLoadingBookings(false);
+        }
+      };
+
+      loadBookings();
     }
   }, [guest, isOpen]);
 
@@ -318,9 +384,17 @@ export function GuestDrawer() {
               <h2 className="text-lg font-semibold text-slate-900">
                 {guest.firstName} {guest.lastName}
               </h2>
-              {guest.email && (
-                <p className="text-sm text-slate-500">{guest.email}</p>
-              )}
+              <div className="flex items-center gap-2">
+                {guest.customerNumber && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                    <Hash className="h-3 w-3" />
+                    {guest.customerNumber}
+                  </span>
+                )}
+                {guest.email && (
+                  <span className="text-sm text-slate-500">{guest.email}</span>
+                )}
+              </div>
             </div>
           </div>
           <button
@@ -446,6 +520,14 @@ export function GuestDrawer() {
                            booking.status === 'cancelled' ? 'Storniert' : 'Ausstehend'}
                         </span>
                       </div>
+                      {booking.externalRef && booking.source && (
+                        <div className="mb-2">
+                          <OTABadge
+                            channelName={booking.source}
+                            externalRef={booking.externalRef}
+                          />
+                        </div>
+                      )}
                       <p className="text-sm text-slate-600 mb-1">
                         {booking.roomName || `Zimmer ${booking.roomNumber}`}
                       </p>
