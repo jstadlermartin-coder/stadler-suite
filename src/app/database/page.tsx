@@ -1,14 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Search, ChevronRight, ChevronDown, Plus, User, Calendar, Hash, Euro, Utensils, Building2, ExternalLink } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, Plus, Calendar, Hash, Euro, Building2, ExternalLink } from 'lucide-react';
 import { CustomerDetailSheet } from '@/components/drawers/CustomerDetailSheet';
 import { getSyncedBookings, getSyncedGuests, CaphotelBooking, CaphotelGuest } from '@/lib/firestore';
 
 // Types
 type BookingStatus = 'lead' | 'offer' | 'booked' | 'cancelled';
-type GuestStage = 'lead' | 'booked' | 'past_booking';
-type TabType = 'guests' | 'bookings';
 
 interface Guest {
   id: string;
@@ -40,7 +38,6 @@ interface Booking {
 // Helper: Parse date string (DD.MM.YYYY) to Date
 function parseDate(dateStr: string): Date {
   if (!dateStr) return new Date();
-  // Handle ISO format
   if (dateStr.includes('-')) {
     return new Date(dateStr);
   }
@@ -54,50 +51,6 @@ function formatDate(dateStr: string): string {
   const date = parseDate(dateStr);
   return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
-
-// Helper: Get guest stage based on bookings
-function getGuestStage(guestId: string, bookings: Booking[]): GuestStage {
-  const guestBookings = bookings.filter(b => b.guestId === guestId);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const hasActiveBooking = guestBookings.some(b => {
-    if (b.status !== 'booked') return false;
-    const checkIn = parseDate(b.checkIn);
-    const checkOut = parseDate(b.checkOut);
-    return checkIn <= today && today <= checkOut;
-  });
-  if (hasActiveBooking) return 'booked';
-
-  const hasFutureBooking = guestBookings.some(b => {
-    if (b.status !== 'booked') return false;
-    const checkIn = parseDate(b.checkIn);
-    return checkIn > today;
-  });
-  if (hasFutureBooking) return 'booked';
-
-  const hasPastBooking = guestBookings.some(b => {
-    if (b.status !== 'booked') return false;
-    const checkOut = parseDate(b.checkOut);
-    return checkOut < today;
-  });
-  if (hasPastBooking) return 'past_booking';
-
-  return 'lead';
-}
-
-// Status colors and labels
-const stageColors: Record<GuestStage, string> = {
-  'lead': 'bg-yellow-100 text-yellow-700',
-  'booked': 'bg-green-100 text-green-700',
-  'past_booking': 'bg-slate-100 text-slate-600'
-};
-
-const stageLabels: Record<GuestStage, string> = {
-  'lead': 'Lead',
-  'booked': 'Gebucht',
-  'past_booking': 'Vergangen'
-};
 
 // Booking status based on CapCorn stat field
 const bookingStatusColors: Record<number, string> = {
@@ -115,14 +68,12 @@ const bookingStatusLabels: Record<number, string> = {
 };
 
 // Jahre fuer Filter
-const years = [2023, 2024, 2025, 2026];
+const years = [2024, 2025, 2026, 2027];
 
 export default function DatabasePage() {
-  const [activeTab, setActiveTab] = useState<TabType>('bookings');
   const [searchQuery, setSearchQuery] = useState('');
-  const [stageFilter, setStageFilter] = useState<GuestStage | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<number | 'all'>('all');
-  const [yearFilter, setYearFilter] = useState<number | 'all'>('all');
+  const [yearFilter, setYearFilter] = useState<number | 'all'>(new Date().getFullYear());
   const [guests, setGuests] = useState<Guest[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [caphotelBookings, setCaphotelBookings] = useState<CaphotelBooking[]>([]);
@@ -180,36 +131,6 @@ export default function DatabasePage() {
     loadData();
   }, []);
 
-  // Compute guest stages
-  const guestStages = useMemo(() => {
-    const stages: Record<string, GuestStage> = {};
-    guests.forEach(guest => {
-      stages[guest.id] = getGuestStage(guest.id, bookings);
-    });
-    return stages;
-  }, [guests, bookings]);
-
-  // Gefilterte Gäste
-  const filteredGuests = useMemo(() => {
-    return guests.filter(guest => {
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesSearch =
-          guest.firstName.toLowerCase().includes(query) ||
-          guest.lastName.toLowerCase().includes(query) ||
-          guest.email?.toLowerCase().includes(query) ||
-          guest.phone?.includes(query);
-        if (!matchesSearch) return false;
-      }
-
-      if (stageFilter !== 'all') {
-        if (guestStages[guest.id] !== stageFilter) return false;
-      }
-
-      return true;
-    });
-  }, [guests, searchQuery, stageFilter, guestStages]);
-
   // Gefilterte Buchungen
   const filteredBookings = useMemo(() => {
     return caphotelBookings.filter(booking => {
@@ -239,12 +160,6 @@ export default function DatabasePage() {
     });
   }, [caphotelBookings, searchQuery, statusFilter, yearFilter]);
 
-  const handleGuestClick = (guest: Guest) => {
-    setSelectedGuest(guest);
-    setSelectedBooking(null);
-    setCdsOpen(true);
-  };
-
   const handleBookingClick = (booking: CaphotelBooking) => {
     // Find the guest for this booking
     const guest = guests.find(g => g.id === booking.gast.toString());
@@ -265,32 +180,13 @@ export default function DatabasePage() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Tabs */}
-      <div className="border-b border-slate-200">
-        <div className="flex">
-          <button
-            onClick={() => setActiveTab('bookings')}
-            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors border-b-2 ${
-              activeTab === 'bookings'
-                ? 'text-blue-600 border-blue-600'
-                : 'text-slate-500 border-transparent hover:text-slate-700'
-            }`}
-          >
-            <Hash className="h-4 w-4 inline mr-2" />
-            Buchungen ({caphotelBookings.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('guests')}
-            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors border-b-2 ${
-              activeTab === 'guests'
-                ? 'text-blue-600 border-blue-600'
-                : 'text-slate-500 border-transparent hover:text-slate-700'
-            }`}
-          >
-            <User className="h-4 w-4 inline mr-2" />
-            Gäste ({guests.length})
-          </button>
-        </div>
+      {/* Header */}
+      <div className="border-b border-slate-200 px-6 py-4">
+        <h1 className="text-2xl font-bold text-slate-900">
+          <Hash className="h-6 w-6 inline mr-2 text-slate-400" />
+          Buchungen & Angebote
+        </h1>
+        <p className="text-sm text-slate-500 mt-1">Alle Reservierungen aus CapCorn</p>
       </div>
 
       {/* Full-Width Search */}
@@ -301,7 +197,7 @@ export default function DatabasePage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={activeTab === 'bookings' ? 'Buchungsnummer, Name oder E-Mail suchen...' : 'Name, E-Mail oder Telefon suchen...'}
+            placeholder="Buchungsnummer, Name oder E-Mail suchen..."
             className="w-full pl-14 pr-6 py-5 text-lg text-slate-900 placeholder-slate-400 focus:outline-none"
             autoFocus
           />
@@ -330,46 +226,25 @@ export default function DatabasePage() {
               </div>
             </div>
 
-            {/* Status Filter - different for each tab */}
-            {activeTab === 'bookings' ? (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-slate-500">Status:</span>
-                {(['all', 1, 2, 3, 4] as const).map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setStatusFilter(status)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                      statusFilter === status
-                        ? status === 'all'
-                          ? 'bg-slate-900 text-white'
-                          : bookingStatusColors[status]
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {status === 'all' ? 'Alle' : bookingStatusLabels[status]}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-slate-500">Status:</span>
-                {(['all', 'lead', 'booked', 'past_booking'] as const).map((stage) => (
-                  <button
-                    key={stage}
-                    onClick={() => setStageFilter(stage)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                      stageFilter === stage
-                        ? stage === 'all'
-                          ? 'bg-slate-900 text-white'
-                          : stageColors[stage]
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {stage === 'all' ? 'Alle' : stageLabels[stage]}
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Status Filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">Status:</span>
+              {(['all', 1, 2, 3, 4] as const).map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                    statusFilter === status
+                      ? status === 'all'
+                        ? 'bg-slate-900 text-white'
+                        : bookingStatusColors[status]
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {status === 'all' ? 'Alle' : bookingStatusLabels[status]}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Neuer Eintrag Button */}
@@ -385,9 +260,7 @@ export default function DatabasePage() {
           <div className="flex items-center justify-center py-20">
             <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-200 border-t-slate-900"></div>
           </div>
-        ) : activeTab === 'bookings' ? (
-          /* Bookings Tab */
-          filteredBookings.length === 0 ? (
+        ) : filteredBookings.length === 0 ? (
             <div className="text-center py-20">
               <Hash className="h-12 w-12 text-slate-200 mx-auto mb-4" />
               <p className="text-slate-500">{searchQuery ? 'Keine Buchungen gefunden' : 'Keine Buchungen vorhanden'}</p>
@@ -475,49 +348,12 @@ export default function DatabasePage() {
                 </button>
               ))}
             </div>
-          )
-        ) : (
-          /* Guests Tab */
-          filteredGuests.length === 0 ? (
-            <div className="text-center py-20">
-              <User className="h-12 w-12 text-slate-200 mx-auto mb-4" />
-              <p className="text-slate-500">{searchQuery ? 'Keine Gäste gefunden' : 'Keine Gäste vorhanden'}</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredGuests.map((guest) => {
-                const stage = guestStages[guest.id];
-                return (
-                  <button
-                    key={guest.id}
-                    onClick={() => handleGuestClick(guest)}
-                    className="w-full flex items-center gap-4 p-4 hover:bg-slate-50 rounded-xl transition-colors text-left"
-                  >
-                    <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-lg font-medium text-slate-600">{guest.firstName.charAt(0)}{guest.lastName.charAt(0)}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-slate-900">{guest.firstName} {guest.lastName}</p>
-                      <p className="text-sm text-slate-500 truncate">{guest.email || guest.phone || 'Keine Kontaktdaten'}</p>
-                    </div>
-                    <span className={`text-xs px-3 py-1 rounded-full ${stageColors[stage]}`}>
-                      {stageLabels[stage]}
-                    </span>
-                    <ChevronRight className="h-5 w-5 text-slate-300 flex-shrink-0" />
-                  </button>
-                );
-              })}
-            </div>
-          )
-        )}
+          )}
       </div>
 
       {/* Stats Footer */}
       <div className="px-6 py-4 text-center text-sm text-slate-400 border-t border-slate-100">
-        {activeTab === 'bookings'
-          ? `${filteredBookings.length} von ${caphotelBookings.length} Buchungen`
-          : `${filteredGuests.length} von ${guests.length} Gästen`
-        }
+        {filteredBookings.length} von {caphotelBookings.length} Buchungen
       </div>
 
       {/* Customer Detail Sheet */}
@@ -558,7 +394,6 @@ export default function DatabasePage() {
           children: b.children,
           status: b.status,
         })) : []}
-        stage={selectedGuest ? guestStages[selectedGuest.id] : undefined}
       />
     </div>
   );
