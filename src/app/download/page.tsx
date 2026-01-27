@@ -46,7 +46,7 @@ export default function DownloadPage() {
             Verbindet Ihre lokale CapHotel-Datenbank mit der Stadler Suite Web-App
           </p>
           <div className="mt-4 inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-            Version 4.1 - Kein Google CLI noetig
+            Version 4.3 - Kein Python oder Google CLI noetig
           </div>
         </div>
 
@@ -236,13 +236,19 @@ export default function DownloadPage() {
                 3
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900">Firebase-Key hinzufuegen</h3>
+                <h3 className="font-semibold text-gray-900">Firebase-Key erstellen</h3>
                 <p className="text-gray-600 mt-1">
-                  Die Datei <code className="bg-gray-100 px-2 py-1 rounded text-sm">firebase-key.json</code> vom Admin erhalten und in denselben Ordner kopieren.
+                  Die Datei <code className="bg-gray-100 px-2 py-1 rounded text-sm">firebase-key.json</code> in denselben Ordner kopieren.
                 </p>
-                <p className="text-gray-500 text-sm mt-2">
-                  (Der Key wird einmalig in der Firebase Console erstellt)
-                </p>
+                <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm">
+                  <p className="font-medium text-gray-700 mb-2">So erstellst du den Key:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-gray-600">
+                    <li>Oeffne die <a href="https://console.firebase.google.com/project/stadler-suite/settings/serviceaccounts/adminsdk" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Firebase Console</a></li>
+                    <li>Tab &quot;Dienstkonten&quot; waehlen</li>
+                    <li>&quot;Neuen privaten Schluessel generieren&quot; klicken</li>
+                    <li>Als <code className="bg-gray-200 px-1 rounded">firebase-key.json</code> speichern</li>
+                  </ol>
+                </div>
               </div>
             </div>
 
@@ -275,7 +281,7 @@ export default function DownloadPage() {
 
         {/* Footer */}
         <div className="text-center mt-12 text-gray-500 text-sm">
-          <p>CapCorn Bridge v4.1 - Hotel Stadler am Attersee</p>
+          <p>CapCorn Bridge v4.3 - Hotel Stadler am Attersee</p>
           <p className="mt-1">
             <a href="/" className="text-blue-600 hover:underline">Zurueck zur App</a>
           </p>
