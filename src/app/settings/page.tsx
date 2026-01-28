@@ -28,6 +28,10 @@ import {
   saveSyncedChannels,
   saveSyncStatus,
   getSyncStatus,
+  getGuestCategories,
+  saveGuestCategories,
+  GuestCategory,
+  DEFAULT_GUEST_CATEGORIES,
   HotelInfo as FirestoreHotelInfo,
   Category as FirestoreCategory,
   Season as FirestoreSeason,
@@ -301,7 +305,7 @@ const PRICE_UNITS: { id: ArticlePriceUnit; label: string }[] = [
 export default function SettingsPage() {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'basic' | 'resource' | 'communication' | 'bridge' | 'ai'>('basic');
-  const [resourceSubTab, setResourceSubTab] = useState<'lage' | 'kategorie' | 'artikel'>('lage');
+  const [resourceSubTab, setResourceSubTab] = useState<'lage' | 'kategorie' | 'gaeste' | 'artikel'>('lage');
   const [communicationSubTab, setCommunicationSubTab] = useState<'whatsapp' | 'email' | 'email-template' | 'email-import' | 'public-pages'>('whatsapp');
   const [bridgeStatus, setBridgeStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
 
@@ -387,6 +391,20 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   const [editingBuilding, setEditingBuilding] = useState<Building | null>(null);
   const [newBuilding, setNewBuilding] = useState({ name: '', description: '' });
 
+  // Guest Categories State (Altersgruppen)
+  const [guestCategories, setGuestCategories] = useState<GuestCategory[]>(DEFAULT_GUEST_CATEGORIES);
+  const [guestCategoryDrawerOpen, setGuestCategoryDrawerOpen] = useState(false);
+  const [editingGuestCategory, setEditingGuestCategory] = useState<GuestCategory | null>(null);
+  const [newGuestCategory, setNewGuestCategory] = useState<Partial<GuestCategory>>({
+    name: '',
+    shortName: '',
+    ageFrom: 0,
+    ageTo: 99,
+    isAdult: false,
+    sortOrder: 5,
+    color: '#6b7280'
+  });
+
   // Seasons State
   const [seasons, setSeasons] = useState<Season[]>([]);
 
@@ -442,12 +460,13 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     const loadData = async () => {
       try {
         setLoading(true);
-        const [settings, bridgeMappings, savedSyncStatus, savedBuildings, savedArticles] = await Promise.all([
+        const [settings, bridgeMappings, savedSyncStatus, savedBuildings, savedArticles, savedGuestCategories] = await Promise.all([
           loadAllSettings(),
           getBridgeMappings(),
           getSyncStatus(),
           getBuildings(),
-          getAppArticles()
+          getAppArticles(),
+          getGuestCategories()
         ]);
 
         if (settings.hotelInfo) {
@@ -487,6 +506,11 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
           setArticles(savedArticles as Article[]);
         }
 
+        // Load guest categories
+        if (savedGuestCategories && savedGuestCategories.length > 0) {
+          setGuestCategories(savedGuestCategories);
+        }
+
         // Load lead links
         const links = await getLeadLinks();
         setLeadLinks(links);
@@ -523,9 +547,18 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   const saveCategoriesData = async (newCategories: Category[]) => {
     setCategories(newCategories);
     try {
-      await saveCategories(newCategories as FirestoreCategory[]);
+      const success = await saveCategories(newCategories as FirestoreCategory[]);
+      if (success) {
+        setSaveStatus('success');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } else {
+        setSaveStatus('error');
+        alert('Fehler beim Speichern der Kategorien. Bitte pruefe die Browser-Konsole (F12).');
+      }
     } catch (error) {
       console.error('Error saving categories:', error);
+      setSaveStatus('error');
+      alert('Fehler beim Speichern: ' + (error instanceof Error ? error.message : 'Unbekannter Fehler'));
     }
   };
 
@@ -533,9 +566,18 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   const saveSeasonsData = async (newSeasons: Season[]) => {
     setSeasons(newSeasons);
     try {
-      await saveSeasons(newSeasons as FirestoreSeason[]);
+      const success = await saveSeasons(newSeasons as FirestoreSeason[]);
+      if (success) {
+        setSaveStatus('success');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } else {
+        setSaveStatus('error');
+        alert('Fehler beim Speichern der Saisonen. Bitte pruefe die Browser-Konsole (F12).');
+      }
     } catch (error) {
       console.error('Error saving seasons:', error);
+      setSaveStatus('error');
+      alert('Fehler beim Speichern: ' + (error instanceof Error ? error.message : 'Unbekannter Fehler'));
     }
   };
 
@@ -543,10 +585,83 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   const saveBuildingsData = async (newBuildings: Building[]) => {
     setBuildings(newBuildings);
     try {
-      await saveBuildings(newBuildings as FirestoreBuilding[]);
+      const success = await saveBuildings(newBuildings as FirestoreBuilding[]);
+      if (success) {
+        setSaveStatus('success');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } else {
+        setSaveStatus('error');
+        alert('Fehler beim Speichern der Gebaeude. Bitte pruefe die Browser-Konsole (F12).');
+      }
     } catch (error) {
       console.error('Error saving buildings:', error);
+      setSaveStatus('error');
+      alert('Fehler beim Speichern: ' + (error instanceof Error ? error.message : 'Unbekannter Fehler'));
     }
+  };
+
+  // Save guest categories to Firestore
+  const saveGuestCategoriesData = async (newCategories: GuestCategory[]) => {
+    setGuestCategories(newCategories);
+    try {
+      const success = await saveGuestCategories(newCategories);
+      if (success) {
+        setSaveStatus('success');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } else {
+        setSaveStatus('error');
+        alert('Fehler beim Speichern der Gaestekategorien. Bitte pruefe die Browser-Konsole (F12).');
+      }
+    } catch (error) {
+      console.error('Error saving guest categories:', error);
+      setSaveStatus('error');
+      alert('Fehler beim Speichern: ' + (error instanceof Error ? error.message : 'Unbekannter Fehler'));
+    }
+  };
+
+  // Handle save guest category
+  const handleSaveGuestCategory = () => {
+    if (!newGuestCategory.name || !newGuestCategory.shortName) return;
+
+    const category: GuestCategory = {
+      id: editingGuestCategory?.id || Date.now().toString(36),
+      name: newGuestCategory.name || '',
+      shortName: newGuestCategory.shortName || '',
+      ageFrom: newGuestCategory.ageFrom || 0,
+      ageTo: newGuestCategory.ageTo || 99,
+      isAdult: newGuestCategory.isAdult || false,
+      sortOrder: newGuestCategory.sortOrder || guestCategories.length + 1,
+      color: newGuestCategory.color || '#6b7280'
+    };
+
+    let newCategories: GuestCategory[];
+    if (editingGuestCategory) {
+      newCategories = guestCategories.map(c => c.id === editingGuestCategory.id ? category : c);
+    } else {
+      newCategories = [...guestCategories, category];
+    }
+
+    // Sort by sortOrder
+    newCategories.sort((a, b) => a.sortOrder - b.sortOrder);
+    saveGuestCategoriesData(newCategories);
+
+    setGuestCategoryDrawerOpen(false);
+    setEditingGuestCategory(null);
+    setNewGuestCategory({
+      name: '',
+      shortName: '',
+      ageFrom: 0,
+      ageTo: 99,
+      isAdult: false,
+      sortOrder: guestCategories.length + 2,
+      color: '#6b7280'
+    });
+  };
+
+  // Handle delete guest category
+  const handleDeleteGuestCategory = (id: string) => {
+    const newCategories = guestCategories.filter(c => c.id !== id);
+    saveGuestCategoriesData(newCategories);
   };
 
   // Lead Link Functions
@@ -1858,6 +1973,17 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                   Kategorie ({categories.length})
                 </button>
                 <button
+                  onClick={() => setResourceSubTab('gaeste')}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    resourceSubTab === 'gaeste'
+                      ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Users className="h-4 w-4 inline mr-2" />
+                  Gaeste ({guestCategories.length})
+                </button>
+                <button
                   onClick={() => setResourceSubTab('artikel')}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                     resourceSubTab === 'artikel'
@@ -2042,6 +2168,246 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Gaeste Sub-Tab */}
+                {resourceSubTab === 'gaeste' && (
+                  <div className="space-y-4">
+                    {/* Header with Add Button */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-semibold text-slate-900">Gaestekategorien (Altersgruppen)</h3>
+                        <p className="text-sm text-slate-500">Definiere Altersgruppen fuer Preisberechnung und Belegung</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setEditingGuestCategory(null);
+                          setNewGuestCategory({
+                            name: '',
+                            shortName: '',
+                            ageFrom: 0,
+                            ageTo: 99,
+                            isAdult: false,
+                            sortOrder: guestCategories.length + 1,
+                            color: '#6b7280'
+                          });
+                          setGuestCategoryDrawerOpen(true);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Kategorie
+                      </button>
+                    </div>
+
+                    {/* Guest Categories List */}
+                    {guestCategories.length === 0 ? (
+                      <div className="py-12 text-center">
+                        <Users className="h-12 w-12 mx-auto text-slate-300 mb-4" />
+                        <p className="text-slate-500">Noch keine Gaestekategorien</p>
+                        <p className="text-sm text-slate-400 mt-1">Fuege Altersgruppen hinzu</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {guestCategories.map((category) => (
+                          <div
+                            key={category.id}
+                            className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors"
+                          >
+                            <div className="flex items-center gap-4">
+                              <div
+                                className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold"
+                                style={{ backgroundColor: category.color || '#6b7280' }}
+                              >
+                                {category.shortName.charAt(0)}
+                              </div>
+                              <div>
+                                <h4 className="font-medium text-slate-900">{category.name}</h4>
+                                <p className="text-sm text-slate-500">
+                                  {category.ageFrom === category.ageTo
+                                    ? `${category.ageFrom} Jahre`
+                                    : `${category.ageFrom} - ${category.ageTo} Jahre`}
+                                  {category.isAdult && <span className="ml-2 text-blue-600">(Erwachsener)</span>}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 bg-white rounded text-xs font-medium text-slate-600">
+                                {category.shortName}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  setEditingGuestCategory(category);
+                                  setNewGuestCategory({
+                                    name: category.name,
+                                    shortName: category.shortName,
+                                    ageFrom: category.ageFrom,
+                                    ageTo: category.ageTo,
+                                    isAdult: category.isAdult,
+                                    sortOrder: category.sortOrder,
+                                    color: category.color
+                                  });
+                                  setGuestCategoryDrawerOpen(true);
+                                }}
+                                className="p-2 hover:bg-white rounded-lg transition-colors"
+                              >
+                                <Pencil className="h-4 w-4 text-slate-400" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteGuestCategory(category.id)}
+                                className="p-2 hover:bg-red-100 rounded-lg transition-colors"
+                              >
+                                <Trash2 className="h-4 w-4 text-red-400" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Info Box */}
+                    <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
+                      <h4 className="font-medium text-blue-900 mb-2">Verwendung</h4>
+                      <ul className="text-sm text-blue-700 space-y-1">
+                        <li>• Diese Kategorien werden bei der Belegung verwendet</li>
+                        <li>• Die Preise werden pro Kategorie in den Saisonen festgelegt</li>
+                        <li>• Ortstaxe-Berechnung basiert auf diesen Altersgruppen</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Gaeste Drawer */}
+                {guestCategoryDrawerOpen && (
+                  <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+                      <div className="flex items-center justify-between p-6 border-b border-slate-200">
+                        <h3 className="text-lg font-semibold text-slate-900">
+                          {editingGuestCategory ? 'Kategorie bearbeiten' : 'Neue Gaestekategorie'}
+                        </h3>
+                        <button
+                          onClick={() => {
+                            setGuestCategoryDrawerOpen(false);
+                            setEditingGuestCategory(null);
+                          }}
+                          className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                        >
+                          <X className="h-5 w-5 text-slate-500" />
+                        </button>
+                      </div>
+
+                      <div className="p-6 space-y-4">
+                        {/* Name */}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                          <input
+                            type="text"
+                            value={newGuestCategory.name || ''}
+                            onChange={(e) => setNewGuestCategory({ ...newGuestCategory, name: e.target.value })}
+                            placeholder="z.B. Erwachsener, Kind 5-8"
+                            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        {/* Short Name */}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Kurzbezeichnung</label>
+                          <input
+                            type="text"
+                            value={newGuestCategory.shortName || ''}
+                            onChange={(e) => setNewGuestCategory({ ...newGuestCategory, shortName: e.target.value })}
+                            placeholder="z.B. Erw., Kind"
+                            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        {/* Age Range */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Alter von</label>
+                            <input
+                              type="number"
+                              value={newGuestCategory.ageFrom || 0}
+                              onChange={(e) => setNewGuestCategory({ ...newGuestCategory, ageFrom: parseInt(e.target.value) || 0 })}
+                              min="0"
+                              max="99"
+                              className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Alter bis</label>
+                            <input
+                              type="number"
+                              value={newGuestCategory.ageTo || 99}
+                              onChange={(e) => setNewGuestCategory({ ...newGuestCategory, ageTo: parseInt(e.target.value) || 99 })}
+                              min="0"
+                              max="99"
+                              className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Color & Is Adult */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Farbe</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={newGuestCategory.color || '#6b7280'}
+                                onChange={(e) => setNewGuestCategory({ ...newGuestCategory, color: e.target.value })}
+                                className="w-10 h-10 border border-slate-200 rounded-lg cursor-pointer"
+                              />
+                              <span className="text-sm text-slate-500">{newGuestCategory.color}</span>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Typ</label>
+                            <button
+                              onClick={() => setNewGuestCategory({ ...newGuestCategory, isAdult: !newGuestCategory.isAdult })}
+                              className={`w-full px-4 py-2 rounded-lg border transition-colors ${
+                                newGuestCategory.isAdult
+                                  ? 'bg-blue-100 border-blue-300 text-blue-700'
+                                  : 'bg-slate-100 border-slate-200 text-slate-600'
+                              }`}
+                            >
+                              {newGuestCategory.isAdult ? 'Erwachsener' : 'Kind'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Sort Order */}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Sortierung</label>
+                          <input
+                            type="number"
+                            value={newGuestCategory.sortOrder || 1}
+                            onChange={(e) => setNewGuestCategory({ ...newGuestCategory, sortOrder: parseInt(e.target.value) || 1 })}
+                            min="1"
+                            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3 p-6 border-t border-slate-200">
+                        <button
+                          onClick={() => {
+                            setGuestCategoryDrawerOpen(false);
+                            setEditingGuestCategory(null);
+                          }}
+                          className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+                        >
+                          Abbrechen
+                        </button>
+                        <button
+                          onClick={handleSaveGuestCategory}
+                          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          {editingGuestCategory ? 'Speichern' : 'Hinzufuegen'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 

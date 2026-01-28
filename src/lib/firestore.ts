@@ -63,6 +63,18 @@ export interface AgePriceTier {
   percentage: number; // Prozent vom Erwachsenenpreis
 }
 
+// Gästekategorien (Altersgruppen)
+export interface GuestCategory {
+  id: string;
+  name: string;              // z.B. "Erwachsener", "Kind 5-8"
+  shortName: string;         // z.B. "Erw.", "Kind"
+  ageFrom: number;           // Mindestalter
+  ageTo: number;             // Höchstalter
+  isAdult: boolean;          // Ist Erwachsener?
+  sortOrder: number;         // Sortierreihenfolge
+  color?: string;            // Farbe für UI
+}
+
 export interface Rate {
   id: string;
   name: string;
@@ -199,14 +211,10 @@ export async function getCategories(): Promise<Category[]> {
 }
 
 export async function saveCategories(categories: Category[]): Promise<boolean> {
-  try {
-    const docRef = doc(db, 'settings', 'categories');
-    await setDoc(docRef, { items: categories, updatedAt: new Date().toISOString() });
-    return true;
-  } catch (error) {
-    console.error('Error saving categories:', error);
-    return false;
-  }
+  const docRef = doc(db, 'settings', 'categories');
+  const cleanedCategories = removeUndefined(categories);
+  await setDoc(docRef, { items: cleanedCategories, updatedAt: new Date().toISOString() });
+  return true;
 }
 
 // ============ BUILDINGS ============
@@ -225,15 +233,47 @@ export async function getBuildings(): Promise<Building[]> {
   }
 }
 
+// Helper: Remove undefined values from object (Firestore doesn't accept undefined)
+function removeUndefined<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 export async function saveBuildings(buildings: Building[]): Promise<boolean> {
+  const docRef = doc(db, 'settings', 'buildings');
+  const cleanedBuildings = removeUndefined(buildings);
+  await setDoc(docRef, { items: cleanedBuildings, updatedAt: new Date().toISOString() });
+  return true;
+}
+
+// ============ GUEST CATEGORIES (Altersgruppen) ============
+
+// Default Gästekategorien
+export const DEFAULT_GUEST_CATEGORIES: GuestCategory[] = [
+  { id: 'adult', name: 'Erwachsener', shortName: 'Erw.', ageFrom: 17, ageTo: 99, isAdult: true, sortOrder: 1, color: '#3b82f6' },
+  { id: 'teen', name: 'Jugendlicher (9-16)', shortName: 'Jug.', ageFrom: 9, ageTo: 16, isAdult: false, sortOrder: 2, color: '#10b981' },
+  { id: 'child_5_8', name: 'Kind (5-8)', shortName: 'Kind', ageFrom: 5, ageTo: 8, isAdult: false, sortOrder: 3, color: '#f59e0b' },
+  { id: 'child_0_4', name: 'Kleinkind (0-4)', shortName: 'Baby', ageFrom: 0, ageTo: 4, isAdult: false, sortOrder: 4, color: '#ec4899' },
+];
+
+export async function getGuestCategories(): Promise<GuestCategory[]> {
   try {
-    const docRef = doc(db, 'settings', 'buildings');
-    await setDoc(docRef, { items: buildings, updatedAt: new Date().toISOString() });
-    return true;
+    const docRef = doc(db, 'settings', 'guestCategories');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data().items as GuestCategory[];
+    }
+    return DEFAULT_GUEST_CATEGORIES;
   } catch (error) {
-    console.error('Error saving buildings:', error);
-    return false;
+    console.error('Error getting guest categories:', error);
+    return DEFAULT_GUEST_CATEGORIES;
   }
+}
+
+export async function saveGuestCategories(categories: GuestCategory[]): Promise<boolean> {
+  const docRef = doc(db, 'settings', 'guestCategories');
+  const cleanedCategories = removeUndefined(categories);
+  await setDoc(docRef, { items: cleanedCategories, updatedAt: new Date().toISOString() });
+  return true;
 }
 
 // ============ SEASONS ============
@@ -253,14 +293,10 @@ export async function getSeasons(): Promise<Season[]> {
 }
 
 export async function saveSeasons(seasons: Season[]): Promise<boolean> {
-  try {
-    const docRef = doc(db, 'settings', 'seasons');
-    await setDoc(docRef, { items: seasons, updatedAt: new Date().toISOString() });
-    return true;
-  } catch (error) {
-    console.error('Error saving seasons:', error);
-    return false;
-  }
+  const docRef = doc(db, 'settings', 'seasons');
+  const cleanedSeasons = removeUndefined(seasons);
+  await setDoc(docRef, { items: cleanedSeasons, updatedAt: new Date().toISOString() });
+  return true;
 }
 
 // ============ ARTICLES (App-eigene Artikel) ============
@@ -296,14 +332,10 @@ export async function getAppArticles(): Promise<AppArticle[]> {
 }
 
 export async function saveAppArticles(articles: AppArticle[]): Promise<boolean> {
-  try {
-    const docRef = doc(db, 'settings', 'articles');
-    await setDoc(docRef, { items: articles, updatedAt: new Date().toISOString() });
-    return true;
-  } catch (error) {
-    console.error('Error saving articles:', error);
-    return false;
-  }
+  const docRef = doc(db, 'settings', 'articles');
+  const cleanedArticles = removeUndefined(articles);
+  await setDoc(docRef, { items: cleanedArticles, updatedAt: new Date().toISOString() });
+  return true;
 }
 
 // ============ GUESTS ============
@@ -571,6 +603,7 @@ export interface CaphotelBooking {
   guestName?: string;        // Gastname (joined)
   guestEmail?: string;       // E-Mail
   channelName?: string;      // Channel Name (z.B. "Booking.com", "Expedia", "Direkt")
+  pession?: number;          // Verpflegung: 0=UE, 1=F, 2=HP, 3=VP (aus BUZ-Tabelle)
   rooms?: CaphotelBookingRoom[];
   account?: CaphotelAccountPosition[];
   accountTotal?: number;

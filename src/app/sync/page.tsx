@@ -251,11 +251,34 @@ export default function SyncPage() {
 
       const bookings = await bridgeAPI.getCalendar(startStr, endStr);
       const now = new Date().toISOString();
+
+      // In Firestore speichern
+      const firestoreBookings: CaphotelBooking[] = bookings.map(b => ({
+        resn: b.resn,
+        gast: b.gast,
+        stat: 1, // aktiv
+        andf: b.rooms?.[0]?.datea || '',
+        ande: b.rooms?.[0]?.datee || '',
+        chid: 0,
+        guestName: `${b.vorn || ''} ${b.nacn || ''}`.trim(),
+        guestEmail: b.mail || '',
+        channelName: b.channel_name || '',
+        rooms: b.rooms?.map(r => ({
+          zimm: r.zimn,
+          vndt: r.datea,
+          bsdt: r.datee,
+          pers: r.pession || 2,
+          kndr: 0
+        })),
+        syncedAt: now
+      }));
+      await saveSyncedBookings(firestoreBookings);
+      addLog(`${bookings.length} Buchungen in Firestore gespeichert`);
+
       setSyncStatus(prev => ({
         ...prev,
         bookings: { status: 'synced', lastSync: now, count: bookings.length }
       }));
-      addLog(`${bookings.length} Buchungen geladen`);
 
     } catch (error) {
       setSyncStatus(prev => ({ ...prev, bookings: { ...prev.bookings, status: 'error' } }));

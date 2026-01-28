@@ -3,6 +3,7 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { X, User, Mail, Phone, MapPin, Calendar, ChevronRight, FileText, Hash } from 'lucide-react';
 import { getSyncedBookings, CaphotelBooking } from '@/lib/firestore';
+import { formatCustomerNumber } from '@/lib/utils';
 
 // Types - Extended for deduplicated guests
 interface Guest {
@@ -388,7 +389,7 @@ export function GuestDrawer() {
                 {guest.customerNumber && (
                   <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
                     <Hash className="h-3 w-3" />
-                    {guest.customerNumber}
+                    {formatCustomerNumber(guest.customerNumber)}
                   </span>
                 )}
                 {guest.email && (
