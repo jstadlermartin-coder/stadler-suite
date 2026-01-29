@@ -11,7 +11,8 @@ import {
   query,
   where,
   orderBy,
-  Timestamp
+  Timestamp,
+  runTransaction
 } from 'firebase/firestore';
 
 // Types
@@ -434,6 +435,82 @@ export async function getGuestByLookup(lookupType: 'phone' | 'email', lookupValu
   } catch (error) {
     console.error('Error getting guest lookup:', error);
     return null;
+  }
+}
+
+// Lookup-Index speichern (für schnelle Suche nach Email/Telefon)
+export async function saveGuestLookup(
+  type: 'phone' | 'email',
+  value: string,
+  guestId: string,
+  customerNumber: number
+): Promise<boolean> {
+  try {
+    const lookupId = `${type}_${value}`;
+    const docRef = doc(db, 'guestLookup', lookupId);
+    await setDoc(docRef, {
+      guestId,
+      customerNumber,
+      type,
+      value,
+      updatedAt: new Date().toISOString()
+    });
+    return true;
+  } catch (error) {
+    console.error('Error saving guest lookup:', error);
+    return false;
+  }
+}
+
+// Nächste Kundennummer atomar holen (thread-safe mit Transaction)
+// Kundennummern starten bei 100001
+export async function getNextCustomerNumber(): Promise<number> {
+  const counterRef = doc(db, 'settings', 'guestCounter');
+
+  const newNumber = await runTransaction(db, async (transaction) => {
+    const counterDoc = await transaction.get(counterRef);
+
+    let lastNumber = 100000; // Start bei 100000, erste Nummer wird 100001
+    if (counterDoc.exists()) {
+      lastNumber = counterDoc.data().lastNumber || 100000;
+    }
+
+    const nextNumber = lastNumber + 1;
+    transaction.set(counterRef, { lastNumber: nextNumber, updatedAt: new Date().toISOString() });
+
+    return nextNumber;
+  });
+
+  return newNumber;
+}
+
+// Deduplizierten Gast speichern
+export async function saveDeduplicatedGuest(guest: DeduplicatedGuest): Promise<boolean> {
+  try {
+    const docRef = doc(db, 'guests', guest.id);
+    await setDoc(docRef, removeUndefined(guest));
+    return true;
+  } catch (error) {
+    console.error('Error saving deduplicated guest:', error);
+    return false;
+  }
+}
+
+// Deduplizierten Gast aktualisieren (z.B. CapHotel-ID hinzufügen)
+export async function updateDeduplicatedGuest(
+  guestId: string,
+  updates: Partial<DeduplicatedGuest>
+): Promise<boolean> {
+  try {
+    const docRef = doc(db, 'guests', guestId);
+    await updateDoc(docRef, removeUndefined({
+      ...updates,
+      updatedAt: new Date().toISOString()
+    }));
+    return true;
+  } catch (error) {
+    console.error('Error updating deduplicated guest:', error);
+    return false;
   }
 }
 
