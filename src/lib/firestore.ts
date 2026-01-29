@@ -602,8 +602,12 @@ export interface CaphotelBooking {
   extn?: string;             // Externe Buchungsnummer (Booking.com, Expedia etc.)
   guestName?: string;        // Gastname (joined)
   guestEmail?: string;       // E-Mail
+  guestPhone?: string;       // Telefonnummer
+  guestSalutation?: string;  // Anrede (Herr, Frau, etc.)
   channelName?: string;      // Channel Name (z.B. "Booking.com", "Expedia", "Direkt")
   pession?: number;          // Verpflegung: 0=UE, 1=F, 2=HP, 3=VP (aus BUZ-Tabelle)
+  nights?: number;           // Anzahl Nächte
+  totalPrice?: number;       // Gesamtpreis der Buchung
   rooms?: CaphotelBookingRoom[];
   account?: CaphotelAccountPosition[];
   accountTotal?: number;
@@ -616,10 +620,15 @@ export interface CaphotelBookingRoom {
   bsdt: string;
   pers: number;
   kndr: number;
+  pession?: number;          // Verpflegung pro Zimmer
+  nights?: number;           // Nächte pro Zimmer
+  preis?: number;            // Preis pro Zimmer
+  roomName?: string;         // Zimmername
 }
 
 export interface CaphotelGuest {
   gast: number;
+  anre?: string;             // Anrede (Herr, Frau, etc.)
   vorn: string;              // Vorname
   nacn: string;              // Nachname
   mail?: string;
@@ -628,6 +637,7 @@ export interface CaphotelGuest {
   polz?: string;             // PLZ
   ortb?: string;             // Ort
   land?: string;
+  gebd?: string;             // Geburtsdatum
   syncedAt: string;
 }
 
@@ -662,6 +672,12 @@ export interface CaphotelRoom {
 export interface CaphotelChannel {
   chid: number;
   name: string;
+  syncedAt: string;
+}
+
+export interface CaphotelCategory {
+  catg: number;              // Kategorie-ID
+  beze: string;              // Bezeichnung
   syncedAt: string;
 }
 
@@ -814,6 +830,36 @@ export async function getSyncedChannels(): Promise<CaphotelChannel[]> {
     return [];
   } catch (error) {
     console.error('Error getting synced channels:', error);
+    return [];
+  }
+}
+
+// Save synced categories (Zimmerkategorien aus CapCorn)
+export async function saveSyncedCategories(categories: CaphotelCategory[]): Promise<boolean> {
+  try {
+    const docRef = doc(db, 'caphotelSync', 'categories');
+    await setDoc(docRef, {
+      items: categories,
+      count: categories.length,
+      syncedAt: new Date().toISOString()
+    });
+    return true;
+  } catch (error) {
+    console.error('Error saving synced categories:', error);
+    return false;
+  }
+}
+
+export async function getSyncedCategories(): Promise<CaphotelCategory[]> {
+  try {
+    const docRef = doc(db, 'caphotelSync', 'categories');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data().items as CaphotelCategory[];
+    }
+    return [];
+  } catch (error) {
+    console.error('Error getting synced categories:', error);
     return [];
   }
 }

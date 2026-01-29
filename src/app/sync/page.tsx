@@ -9,17 +9,20 @@ import {
   saveSyncedArticles,
   saveSyncedRooms,
   saveSyncedChannels,
+  saveSyncedCategories,
   saveSyncStatus,
   getSyncStatus,
   CaphotelBooking,
   CaphotelGuest,
   CaphotelArticle,
   CaphotelRoom,
-  CaphotelChannel
+  CaphotelChannel,
+  CaphotelCategory
 } from '@/lib/firestore';
 
 interface SyncStatus {
   rooms: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
+  categories: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
   guests: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
   bookings: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
   availability: { status: 'idle' | 'syncing' | 'synced' | 'error'; lastSync: string | null; count: number };
@@ -32,6 +35,7 @@ export default function SyncPage() {
   const [bridgeStats, setBridgeStats] = useState<BridgeStats | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     rooms: { status: 'idle', lastSync: null, count: 0 },
+    categories: { status: 'idle', lastSync: null, count: 0 },
     guests: { status: 'idle', lastSync: null, count: 0 },
     bookings: { status: 'idle', lastSync: null, count: 0 },
     availability: { status: 'idle', lastSync: null, count: 0 },
@@ -104,6 +108,34 @@ export default function SyncPage() {
     }
   };
 
+  const syncCategories = async () => {
+    setSyncStatus(prev => ({ ...prev, categories: { ...prev.categories, status: 'syncing' } }));
+    addLog('Synchronisiere Zimmerkategorien...');
+
+    try {
+      const categories = await bridgeAPI.getCategories();
+      const now = new Date().toISOString();
+
+      // In Firestore speichern
+      const firestoreCategories: CaphotelCategory[] = categories.map(c => ({
+        catg: c.catg,
+        beze: c.beze,
+        syncedAt: now
+      }));
+      await saveSyncedCategories(firestoreCategories);
+      addLog(`${categories.length} Kategorien in Firestore gespeichert`);
+
+      setSyncStatus(prev => ({
+        ...prev,
+        categories: { status: 'synced', lastSync: now, count: categories.length }
+      }));
+
+    } catch (error) {
+      setSyncStatus(prev => ({ ...prev, categories: { ...prev.categories, status: 'error' } }));
+      addLog(`Fehler beim Laden der Kategorien: ${error instanceof Error ? error.message : 'Unbekannt'}`);
+    }
+  };
+
   const syncGuests = async () => {
     setSyncStatus(prev => ({ ...prev, guests: { ...prev.guests, status: 'syncing' } }));
     addLog('Synchronisiere Gäste...');
@@ -124,9 +156,10 @@ export default function SyncPage() {
 
       const now = new Date().toISOString();
 
-      // In Firestore speichern
+      // In Firestore speichern - ALLE Gast-Daten inkl. Anrede und Geburtsdatum
       const firestoreGuests: CaphotelGuest[] = allGuests.map(g => ({
         gast: g.gast,
+        anre: g.anre || '',        // Anrede
         vorn: g.vorn || '',
         nacn: g.nacn || '',
         mail: g.mail || '',
@@ -135,10 +168,11 @@ export default function SyncPage() {
         polz: g.polz || '',
         ortb: g.ortb || '',
         land: g.land || '',
+        gebd: g.gebd || '',        // Geburtsdatum
         syncedAt: now
       }));
       await saveSyncedGuests(firestoreGuests);
-      addLog(`${allGuests.length} Gäste in Firestore gespeichert`);
+      addLog(`${allGuests.length} Gäste mit allen Kontaktdaten in Firestore gespeichert`);
 
       setSyncStatus(prev => ({
         ...prev,
@@ -211,12 +245,12 @@ export default function SyncPage() {
 
   const syncAvailability = async () => {
     setSyncStatus(prev => ({ ...prev, availability: { ...prev.availability, status: 'syncing' } }));
-    addLog('Synchronisiere Verfügbarkeit...');
+    addLog('Synchronisiere Verfügbarkeit (2 Jahre voraus)...');
 
     try {
       const today = new Date();
       const endDate = new Date();
-      endDate.setMonth(endDate.getMonth() + 6); // 6 Monate voraus
+      endDate.setFullYear(endDate.getFullYear() + 2); // 2 Jahre voraus
 
       const startStr = today.toISOString().split('T')[0];
       const endStr = endDate.toISOString().split('T')[0];
@@ -237,22 +271,19 @@ export default function SyncPage() {
 
   const syncCalendar = async () => {
     setSyncStatus(prev => ({ ...prev, bookings: { ...prev.bookings, status: 'syncing' } }));
-    addLog('Synchronisiere Buchungen...');
+    addLog('Synchronisiere ALLE Buchungen (komplette Historie + Zukunft)...');
 
     try {
-      const today = new Date();
-      const pastDate = new Date();
-      pastDate.setMonth(pastDate.getMonth() - 1); // 1 Monat zurück
-      const futureDate = new Date();
-      futureDate.setMonth(futureDate.getMonth() + 6); // 6 Monate voraus
+      // ALLE Buchungen laden - von 2000 bis 2050
+      const startStr = '2000-01-01';
+      const endStr = '2050-12-31';
 
-      const startStr = pastDate.toISOString().split('T')[0];
-      const endStr = futureDate.toISOString().split('T')[0];
-
+      addLog('Lade Buchungen von 2000 bis 2050...');
       const bookings = await bridgeAPI.getCalendar(startStr, endStr);
+      addLog(`${bookings.length} Buchungen von Bridge erhalten`);
       const now = new Date().toISOString();
 
-      // In Firestore speichern
+      // In Firestore speichern - ALLE verfügbaren Buchungsdaten
       const firestoreBookings: CaphotelBooking[] = bookings.map(b => ({
         resn: b.resn,
         gast: b.gast,
@@ -262,18 +293,27 @@ export default function SyncPage() {
         chid: 0,
         guestName: `${b.vorn || ''} ${b.nacn || ''}`.trim(),
         guestEmail: b.mail || '',
+        guestPhone: b.teln || '',           // NEU: Telefonnummer
+        guestSalutation: b.anre || '',      // NEU: Anrede
         channelName: b.channel_name || '',
+        pession: b.rooms?.[0]?.pession,     // NEU: Verpflegung (0=UE, 1=F, 2=HP)
+        nights: b.rooms?.[0]?.nights,       // NEU: Anzahl Nächte
+        totalPrice: b.rooms?.reduce((sum, r) => sum + (r.preis || 0), 0), // NEU: Gesamtpreis
         rooms: b.rooms?.map(r => ({
           zimm: r.zimn,
           vndt: r.datea,
           bsdt: r.datee,
-          pers: r.pession || 2,
-          kndr: 0
+          pers: 2,                          // Default Personen
+          kndr: 0,
+          pession: r.pession,               // Verpflegung pro Zimmer
+          nights: r.nights,                 // Nächte pro Zimmer
+          preis: r.preis,                   // Preis pro Zimmer
+          roomName: r.room_name             // Zimmername
         })),
         syncedAt: now
       }));
       await saveSyncedBookings(firestoreBookings);
-      addLog(`${bookings.length} Buchungen in Firestore gespeichert`);
+      addLog(`${bookings.length} Buchungen mit allen Details in Firestore gespeichert`);
 
       setSyncStatus(prev => ({
         ...prev,
@@ -288,9 +328,10 @@ export default function SyncPage() {
 
   const syncAll = async () => {
     setIsSyncing(true);
-    addLog('=== Starte Vollsynchronisation ===');
+    addLog('=== Starte VOLLSTÄNDIGE Synchronisation aller Daten ===');
 
     await syncRooms();
+    await syncCategories();
     await syncGuests();
     await syncCalendar();
     await syncAvailability();
@@ -312,7 +353,7 @@ export default function SyncPage() {
       addLog('Warnung: Sync-Status konnte nicht gespeichert werden');
     }
 
-    addLog('=== Synchronisation abgeschlossen ===');
+    addLog('=== VOLLSTÄNDIGE Synchronisation abgeschlossen ===');
     setIsSyncing(false);
   };
 
@@ -411,18 +452,20 @@ export default function SyncPage() {
 
       {/* Sync Status Cards */}
       <div className="grid grid-cols-2 gap-4 mb-6">
-        {(['rooms', 'guests', 'bookings', 'availability', 'articles', 'channels'] as const).map((key) => {
+        {(['rooms', 'categories', 'guests', 'bookings', 'availability', 'articles', 'channels'] as const).map((key) => {
           const data = syncStatus[key];
           const labels = {
             rooms: 'Zimmer',
-            guests: 'Gäste',
-            bookings: 'Buchungen',
-            availability: 'Verfügbarkeit',
+            categories: 'Kategorien',
+            guests: 'Gäste (alle Kontaktdaten)',
+            bookings: 'Buchungen (ALLE)',
+            availability: 'Verfügbarkeit (2 Jahre)',
             articles: 'Artikel',
             channels: 'Buchungskanäle',
           };
           const syncFunctions = {
             rooms: syncRooms,
+            categories: syncCategories,
             guests: syncGuests,
             bookings: syncCalendar,
             availability: syncAvailability,
@@ -431,6 +474,7 @@ export default function SyncPage() {
           };
           const icons = {
             rooms: Database,
+            categories: Database,
             guests: Database,
             bookings: Database,
             availability: Database,
