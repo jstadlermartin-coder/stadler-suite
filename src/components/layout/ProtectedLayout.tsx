@@ -7,6 +7,7 @@ import { SidebarProvider, SlideOutSidebar } from './NewSidebar';
 import { SearchProvider, SearchOverlay } from './SearchOverlay';
 import { GuestDrawerProvider, GuestDrawer } from '../drawers/GuestDrawer';
 import { BookingWizardProvider, NewBookingWizard } from '../booking/NewBookingWizard';
+import { BridgeSyncProvider } from '@/lib/bridge-sync-context';
 import TopBar from './TopBar';
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
@@ -47,9 +48,10 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   // Autorisiert - zeige die App mit neuem Layout
   return (
     <SidebarProvider>
-      <SearchProvider>
-        <GuestDrawerProvider>
-          <BookingWizardProvider>
+      <BridgeSyncProvider>
+        <SearchProvider>
+          <GuestDrawerProvider>
+            <BookingWizardProvider>
             <div className="min-h-screen bg-white">
               <SlideOutSidebar />
               <SearchOverlay />
@@ -62,9 +64,10 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
                 </main>
               </div>
             </div>
-          </BookingWizardProvider>
-        </GuestDrawerProvider>
-      </SearchProvider>
+            </BookingWizardProvider>
+          </GuestDrawerProvider>
+        </SearchProvider>
+      </BridgeSyncProvider>
     </SidebarProvider>
   );
 }

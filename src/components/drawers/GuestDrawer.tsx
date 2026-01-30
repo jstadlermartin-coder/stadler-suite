@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { X, User, Mail, Phone, MapPin, Calendar, ChevronRight, FileText, Hash } from 'lucide-react';
-import { getSyncedBookings, CaphotelBooking } from '@/lib/firestore';
+import { X, User, Mail, Phone, MapPin, Calendar, ChevronRight, FileText, Hash, MessageSquare, Globe } from 'lucide-react';
+import { getSyncedBookings, getSyncedGuests, CaphotelBooking, CaphotelGuest } from '@/lib/firestore';
 import { formatCustomerNumber } from '@/lib/utils';
 
 // Types - Extended for deduplicated guests
@@ -255,50 +255,67 @@ function BookingDetailDrawer({
   );
 }
 
+// Inquiry type for website inquiries
+interface Inquiry {
+  id: string;
+  resn: number;
+  checkIn: string;
+  checkOut: string;
+  adults: number;
+  children: number;
+  message?: string;
+  createdAt: string;
+}
+
 export function GuestDrawer() {
   const { isOpen, guest, close } = useGuestDrawer();
-  const [activeTab, setActiveTab] = useState<'info' | 'bookings'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'bookings' | 'inquiries'>('info');
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [bookingDrawer, setBookingDrawer] = useState<BookingDrawerState>({
     isOpen: false,
     booking: null
   });
 
-  // Buchungen laden wenn Gast geöffnet wird
+  // Buchungen und Anfragen laden wenn Gast geöffnet wird
   useEffect(() => {
     if (guest && isOpen) {
       setLoadingBookings(true);
 
-      // Echte Buchungen aus Firestore laden
-      const loadBookings = async () => {
+      // Echte Buchungen und Anfragen aus Firestore laden
+      const loadData = async () => {
         try {
-          const syncedBookings = await getSyncedBookings();
+          const [syncedBookings, syncedGuests] = await Promise.all([
+            getSyncedBookings(),
+            getSyncedGuests()
+          ]);
 
           // Buchungen nach caphotelGuestIds filtern
           const caphotelIds = guest.caphotelGuestIds || [];
+
+          // Datum formatieren
+          const formatDate = (dateStr: string | undefined) => {
+            if (!dateStr) return '-';
+            try {
+              return new Date(dateStr).toLocaleDateString('de-DE', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+              });
+            } catch {
+              return dateStr;
+            }
+          };
+
+          // Alle Buchungen (nicht Website)
           const guestBookings = syncedBookings
-            .filter((b: CaphotelBooking) => caphotelIds.includes(b.gast))
+            .filter((b: CaphotelBooking) => caphotelIds.includes(b.gast) && b.chid !== 50)
             .map((b: CaphotelBooking): Booking => {
-              // Status mapping: CapHotel stat codes
               let status: Booking['status'] = 'confirmed';
               if (b.stat === 65536) status = 'cancelled';
               else if (b.stat === 64) status = 'confirmed';
               else if (b.stat === 2) status = 'pending';
-
-              // Datum formatieren
-              const formatDate = (dateStr: string | undefined) => {
-                if (!dateStr) return '-';
-                try {
-                  return new Date(dateStr).toLocaleDateString('de-DE', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric'
-                  });
-                } catch {
-                  return dateStr;
-                }
-              };
 
               return {
                 id: String(b.resn),
@@ -316,21 +333,41 @@ export function GuestDrawer() {
                 children: b.rooms?.[0]?.kndr || 0
               };
             })
-            .sort((a, b) => {
-              // Nach Buchungsnummer sortieren (neueste zuerst)
-              return Number(b.bookingNumber) - Number(a.bookingNumber);
-            });
+            .sort((a, b) => Number(b.bookingNumber) - Number(a.bookingNumber));
 
           setBookings(guestBookings);
+
+          // Website-Anfragen (chid=50)
+          const guestInquiries = syncedBookings
+            .filter((b: CaphotelBooking) => caphotelIds.includes(b.gast) && b.chid === 50)
+            .map((b: CaphotelBooking): Inquiry => {
+              // Finde die Gast-Notiz
+              const guestData = syncedGuests.find((g: CaphotelGuest) => g.gast === b.gast);
+
+              return {
+                id: String(b.resn),
+                resn: b.resn,
+                checkIn: formatDate(b.andf),
+                checkOut: formatDate(b.ande),
+                adults: b.rooms?.[0]?.pers || 2,
+                children: b.rooms?.[0]?.kndr || 0,
+                message: guestData?.noti || undefined,
+                createdAt: b.syncedAt || ''
+              };
+            })
+            .sort((a, b) => b.resn - a.resn);
+
+          setInquiries(guestInquiries);
         } catch (error) {
-          console.error('Error loading bookings:', error);
+          console.error('Error loading data:', error);
           setBookings([]);
+          setInquiries([]);
         } finally {
           setLoadingBookings(false);
         }
       };
 
-      loadBookings();
+      loadData();
     }
   }, [guest, isOpen]);
 
@@ -339,6 +376,7 @@ export function GuestDrawer() {
     if (!isOpen) {
       setActiveTab('info');
       setBookings([]);
+      setInquiries([]);
     }
   }, [isOpen]);
 
@@ -354,7 +392,8 @@ export function GuestDrawer() {
 
   const tabs = [
     { id: 'info' as const, label: 'Basisdaten' },
-    { id: 'bookings' as const, label: 'Buchungen' }
+    { id: 'bookings' as const, label: 'Buchungen', count: bookings.length },
+    { id: 'inquiries' as const, label: 'Anfragen', count: inquiries.length }
   ];
 
   return (
@@ -413,7 +452,7 @@ export function GuestDrawer() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`
-                flex-1 py-3 text-sm font-medium transition-colors
+                flex-1 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-1.5
                 ${activeTab === tab.id
                   ? 'text-slate-900 border-b-2 border-slate-900'
                   : 'text-slate-500 hover:text-slate-700'
@@ -421,6 +460,13 @@ export function GuestDrawer() {
               `}
             >
               {tab.label}
+              {tab.count !== undefined && tab.count > 0 && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                  activeTab === tab.id ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600'
+                }`}>
+                  {tab.count}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -483,7 +529,7 @@ export function GuestDrawer() {
                 </div>
               )}
             </div>
-          ) : (
+          ) : activeTab === 'bookings' ? (
             <div className="space-y-3">
               {loadingBookings ? (
                 <div className="flex items-center justify-center py-12">
@@ -541,6 +587,57 @@ export function GuestDrawer() {
                     </button>
                   );
                 })
+              )}
+            </div>
+          ) : (
+            // Inquiries Tab
+            <div className="space-y-3">
+              {loadingBookings ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-200 border-t-slate-900"></div>
+                </div>
+              ) : inquiries.length === 0 ? (
+                <div className="text-center py-12">
+                  <Globe className="h-12 w-12 text-slate-200 mx-auto mb-4" />
+                  <p className="text-slate-500">Keine Website-Anfragen</p>
+                  <p className="text-xs text-slate-400 mt-1">Anfragen vom Website-Formular erscheinen hier</p>
+                </div>
+              ) : (
+                inquiries.map((inquiry) => (
+                  <div
+                    key={inquiry.id}
+                    className="bg-slate-50 rounded-xl p-4"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-slate-400">
+                        #{inquiry.resn.toString().padStart(5, '0')}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                        <Globe className="h-3 w-3" />
+                        Website
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-sm text-slate-600 mb-2">
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                      <span>{inquiry.checkIn} - {inquiry.checkOut}</span>
+                      <span className="text-slate-300">•</span>
+                      <span>{inquiry.adults} Erw.</span>
+                      {inquiry.children > 0 && (
+                        <span className="text-slate-400">+{inquiry.children} Kind.</span>
+                      )}
+                    </div>
+
+                    {inquiry.message && (
+                      <div className="bg-blue-50 rounded-lg p-3 mt-2">
+                        <div className="flex items-start gap-2">
+                          <MessageSquare className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <p className="text-sm text-slate-700">{inquiry.message}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
               )}
             </div>
           )}

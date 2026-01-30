@@ -1,15 +1,15 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Search, ChevronRight, ChevronDown, Plus, Calendar, Hash, Euro, Building2, ExternalLink, Users, User } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, Plus, Calendar, Hash, Euro, Building2, ExternalLink, Users, User, MessageSquare, Globe } from 'lucide-react';
 import { CustomerDetailSheet } from '@/components/drawers/CustomerDetailSheet';
-import { getSyncedBookings, getDeduplicatedGuests, CaphotelBooking, DeduplicatedGuest } from '@/lib/firestore';
+import { getSyncedBookings, getDeduplicatedGuests, getSyncedGuests, CaphotelBooking, CaphotelGuest, DeduplicatedGuest } from '@/lib/firestore';
 import { formatCustomerNumber, formatPession } from '@/lib/utils';
 import { useGuestDrawer } from '@/components/drawers/GuestDrawer';
 
 // Types
 type BookingStatus = 'lead' | 'offer' | 'booked' | 'cancelled';
-type ActiveTab = 'bookings' | 'guests';
+type ActiveTab = 'bookings' | 'guests' | 'inquiries';
 
 interface Guest {
   id: string;
@@ -129,6 +129,7 @@ export default function DatabasePage() {
   const [deduplicatedGuests, setDeduplicatedGuests] = useState<DeduplicatedGuest[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [caphotelBookings, setCaphotelBookings] = useState<CaphotelBooking[]>([]);
+  const [caphotelGuests, setCaphotelGuests] = useState<CaphotelGuest[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<CaphotelBooking | null>(null);
@@ -157,6 +158,10 @@ export default function DatabasePage() {
         // Load synced bookings from Firestore
         const syncedBookings = await getSyncedBookings();
         setCaphotelBookings(syncedBookings);
+
+        // Load synced guests (raw CapHotel data with noti field)
+        const syncedGuests = await getSyncedGuests();
+        setCaphotelGuests(syncedGuests);
 
         // Load deduplicated guests
         const dedupGuests = await getDeduplicatedGuests();
@@ -276,6 +281,35 @@ export default function DatabasePage() {
     });
   }, [deduplicatedGuests, searchQuery]);
 
+  // Website-Anfragen (chid=50) mit Gast-Notizen
+  const websiteInquiries = useMemo(() => {
+    // Filter bookings where chid=50 (Eigene Website)
+    const inquiries = caphotelBookings
+      .filter(b => b.chid === 50)
+      .map(booking => {
+        // Finde die Gast-Notiz aus caphotelGuests
+        const guestData = caphotelGuests.find(g => g.gast === booking.gast);
+        return {
+          ...booking,
+          inquiryMessage: guestData?.noti || null
+        };
+      })
+      .sort((a, b) => new Date(b.syncedAt).getTime() - new Date(a.syncedAt).getTime());
+
+    // Search filter
+    if (!searchQuery) return inquiries;
+
+    const query = searchQuery.toLowerCase();
+    return inquiries.filter(inq => {
+      return (
+        inq.resn.toString().includes(query) ||
+        inq.guestName?.toLowerCase().includes(query) ||
+        inq.guestEmail?.toLowerCase().includes(query) ||
+        inq.inquiryMessage?.toLowerCase().includes(query)
+      );
+    });
+  }, [caphotelBookings, caphotelGuests, searchQuery]);
+
   const handleBookingClick = (booking: CaphotelBooking) => {
     // Find the guest for this booking
     const guest = guests.find(g => g.id === booking.gast.toString());
@@ -313,6 +347,41 @@ export default function DatabasePage() {
     });
   };
 
+  const handleInquiryClick = (inquiry: CaphotelBooking & { inquiryMessage?: string | null }) => {
+    // Find deduplicated guest for this inquiry
+    const dedupGuest = deduplicatedGuests.find(g =>
+      g.caphotelGuestIds?.includes(inquiry.gast)
+    );
+
+    if (dedupGuest) {
+      openGuest({
+        id: dedupGuest.id,
+        customerNumber: dedupGuest.customerNumber,
+        firstName: dedupGuest.firstName,
+        lastName: dedupGuest.lastName,
+        email: dedupGuest.email,
+        phone: dedupGuest.phone,
+        street: dedupGuest.street,
+        city: dedupGuest.city,
+        country: dedupGuest.country,
+        postalCode: dedupGuest.postalCode,
+        caphotelGuestIds: dedupGuest.caphotelGuestIds,
+        totalBookings: dedupGuest.totalBookings,
+        totalRevenue: dedupGuest.totalRevenue,
+      });
+    } else {
+      // Fallback: Create guest from inquiry data
+      openGuest({
+        id: inquiry.gast.toString(),
+        firstName: inquiry.guestName?.split(' ')[0] || '',
+        lastName: inquiry.guestName?.split(' ').slice(1).join(' ') || '',
+        email: inquiry.guestEmail,
+        phone: inquiry.guestPhone,
+        caphotelGuestIds: [inquiry.gast],
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -336,6 +405,22 @@ export default function DatabasePage() {
             }`}
           >
             Buchungen & Angebote
+          </button>
+          <button
+            onClick={() => setActiveTab('inquiries')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === 'inquiries'
+                ? 'border-slate-900 text-slate-900'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Globe className="h-4 w-4" />
+            Anfragen
+            {websiteInquiries.length > 0 && (
+              <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">
+                {websiteInquiries.length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('guests')}
@@ -607,6 +692,67 @@ export default function DatabasePage() {
               ))}
             </div>
           )
+        ) : activeTab === 'inquiries' ? (
+          // Inquiries Tab Content (Website-Anfragen)
+          websiteInquiries.length === 0 ? (
+            <div className="text-center py-20">
+              <Globe className="h-12 w-12 text-slate-200 mx-auto mb-4" />
+              <p className="text-slate-500">{searchQuery ? 'Keine Anfragen gefunden' : 'Keine Website-Anfragen vorhanden'}</p>
+              <p className="text-sm text-slate-400 mt-2">Anfragen vom Website-Formular erscheinen hier</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {websiteInquiries.map((inquiry) => (
+                <button
+                  key={inquiry.resn}
+                  onClick={() => handleInquiryClick(inquiry)}
+                  className="w-full p-4 hover:bg-slate-50 rounded-xl transition-colors text-left border border-slate-100"
+                >
+                  <div className="flex items-start gap-4">
+                    {/* Icon */}
+                    <div className="flex-shrink-0 h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                      <MessageSquare className="h-5 w-5 text-blue-600" />
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="font-medium text-slate-900">{inquiry.guestName || 'Unbekannt'}</p>
+                        <span className="text-xs text-slate-400">
+                          #{inquiry.resn.toString().padStart(5, '0')}
+                        </span>
+                      </div>
+
+                      <p className="text-sm text-slate-500 mb-2">
+                        {inquiry.guestEmail}
+                        {inquiry.guestPhone && ` • ${inquiry.guestPhone}`}
+                      </p>
+
+                      {/* Dates */}
+                      <div className="flex items-center gap-2 text-sm text-slate-600 mb-2">
+                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                        <span>{formatDateShort(inquiry.andf)} - {formatDateShort(inquiry.ande)}</span>
+                        <span className="text-slate-300">•</span>
+                        <Users className="h-3.5 w-3.5 text-slate-400" />
+                        <span>{inquiry.rooms?.[0]?.pers || 2} Pers.</span>
+                      </div>
+
+                      {/* Message */}
+                      {inquiry.inquiryMessage && (
+                        <div className="bg-blue-50 rounded-lg p-3 mt-2">
+                          <p className="text-sm text-slate-700 line-clamp-2">
+                            {inquiry.inquiryMessage}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <ChevronRight className="h-5 w-5 text-slate-300 flex-shrink-0 mt-2" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )
         ) : (
           // Guests Tab Content
           filteredGuests.length === 0 ? (
@@ -664,6 +810,8 @@ export default function DatabasePage() {
       <div className="px-6 py-4 text-center text-sm text-slate-400 border-t border-slate-100">
         {activeTab === 'bookings'
           ? `${filteredBookings.length} von ${caphotelBookings.length} Buchungen`
+          : activeTab === 'inquiries'
+          ? `${websiteInquiries.length} Website-Anfragen`
           : `${filteredGuests.length} von ${deduplicatedGuests.length} Gaeste`
         }
       </div>

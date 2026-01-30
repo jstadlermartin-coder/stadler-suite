@@ -26,7 +26,6 @@ import {
   saveSyncedArticles,
   saveSyncedRooms,
   saveSyncedChannels,
-  saveSyncStatus,
   getSyncStatus,
   getGuestCategories,
   saveGuestCategories,
@@ -46,6 +45,7 @@ import {
   CaphotelRoom,
   CaphotelChannel
 } from '@/lib/firestore';
+import { useBridgeSync } from '@/lib/bridge-sync-context';
 import { storage } from '@/lib/firebase';
 import { ref, getDownloadURL } from 'firebase/storage';
 import {
@@ -304,6 +304,7 @@ const PRICE_UNITS: { id: ArticlePriceUnit; label: string }[] = [
 
 export default function SettingsPage() {
   const { user, logout } = useAuth();
+  const bridgeSync = useBridgeSync();
   const [activeTab, setActiveTab] = useState<'basic' | 'resource' | 'communication' | 'bridge' | 'ai'>('basic');
   const [resourceSubTab, setResourceSubTab] = useState<'lage' | 'kategorie' | 'gaeste' | 'artikel'>('lage');
   const [communicationSubTab, setCommunicationSubTab] = useState<'whatsapp' | 'email' | 'email-template' | 'email-import' | 'public-pages'>('whatsapp');
@@ -959,11 +960,10 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
         syncInProgress: false,
         bookingsCount,
         guestsCount,
-        autoSyncEnabled: syncStatus.autoSyncEnabled,
-        autoSyncInterval: syncStatus.autoSyncInterval
+        autoSyncEnabled: bridgeSync.autoSyncEnabled,
+        autoSyncInterval: bridgeSync.syncInterval
       };
       setSyncStatus(newStatus);
-      await saveSyncStatus(newStatus);
       setBridgeStatus('connected');
 
     } catch (error) {
@@ -974,44 +974,22 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
         ...syncStatus,
         lastSyncSuccess: false,
         syncInProgress: false,
-        error: errorMessage
+        error: errorMessage,
+        autoSyncEnabled: bridgeSync.autoSyncEnabled,
+        autoSyncInterval: bridgeSync.syncInterval
       };
       setSyncStatus(newStatus);
-      await saveSyncStatus(newStatus);
       setBridgeStatus('disconnected');
     }
   };
 
-  // Toggle auto-sync
-  const toggleAutoSync = async () => {
-    const newStatus: SyncStatus = {
-      ...syncStatus,
-      autoSyncEnabled: !syncStatus.autoSyncEnabled
-    };
-    setSyncStatus(newStatus);
-    await saveSyncStatus(newStatus);
-  };
+  // Toggle auto-sync - now uses global context
+  const toggleAutoSync = () => bridgeSync.toggleAutoSync();
 
-  // Update auto-sync interval
-  const updateSyncInterval = async (minutes: number) => {
-    const newStatus: SyncStatus = {
-      ...syncStatus,
-      autoSyncInterval: minutes
-    };
-    setSyncStatus(newStatus);
-    await saveSyncStatus(newStatus);
-  };
+  // Update auto-sync interval - now uses global context
+  const updateSyncInterval = (minutes: number) => bridgeSync.updateSyncInterval(minutes);
 
-  // Auto-sync effect
-  useEffect(() => {
-    if (!syncStatus.autoSyncEnabled || bridgeStatus !== 'connected') return;
-
-    const interval = setInterval(() => {
-      performSync();
-    }, (syncStatus.autoSyncInterval || 15) * 60 * 1000); // Convert minutes to ms
-
-    return () => clearInterval(interval);
-  }, [syncStatus.autoSyncEnabled, syncStatus.autoSyncInterval, bridgeStatus, bridgeConfig.bridgeUrl]);
+  // Note: Auto-sync effect is now handled globally by BridgeSyncProvider
 
   // WhatsApp status check - auto-load when Communication tab is active
   useEffect(() => {
@@ -3595,27 +3573,27 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                         <div>
                           <h4 className="font-medium text-slate-900">Automatisches Backup</h4>
                           <p className="text-sm text-slate-500">
-                            Daten werden automatisch in Firebase gesichert
+                            Daten werden automatisch in Firebase gesichert (auf allen Seiten aktiv)
                           </p>
                         </div>
                         <button
                           onClick={toggleAutoSync}
                           className={`relative w-12 h-6 rounded-full transition-colors ${
-                            syncStatus.autoSyncEnabled ? 'bg-blue-600' : 'bg-slate-300'
+                            bridgeSync.autoSyncEnabled ? 'bg-blue-600' : 'bg-slate-300'
                           }`}
                         >
                           <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                            syncStatus.autoSyncEnabled ? 'left-7' : 'left-1'
+                            bridgeSync.autoSyncEnabled ? 'left-7' : 'left-1'
                           }`} />
                         </button>
                       </div>
 
-                      {syncStatus.autoSyncEnabled && (
+                      {bridgeSync.autoSyncEnabled && (
                         <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
                           <Clock className="h-4 w-4 text-slate-400" />
                           <span className="text-sm text-slate-600">Interval:</span>
                           <select
-                            value={syncStatus.autoSyncInterval}
+                            value={bridgeSync.syncInterval}
                             onChange={(e) => updateSyncInterval(parseInt(e.target.value))}
                             className="px-2 py-1 border border-slate-300 rounded text-sm"
                           >

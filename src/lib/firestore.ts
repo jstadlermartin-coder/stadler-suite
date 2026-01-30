@@ -107,6 +107,19 @@ export interface Guest {
   createdAt?: string;
 }
 
+// Anfrage vom Website-Formular
+export interface GuestInquiry {
+  id: string;                    // resn als String
+  caphotelGuestId: number;       // gast-ID in CapHotel
+  message: string;               // Anfrage-Nachricht (noti)
+  checkIn?: string;              // Gewünschte Anreise
+  checkOut?: string;             // Gewünschte Abreise
+  adults?: number;               // Anzahl Erwachsene
+  children?: number;             // Anzahl Kinder
+  createdAt: string;             // Wann erstellt
+  status: 'new' | 'answered' | 'converted' | 'declined';  // Bearbeitungsstatus
+}
+
 // Deduplizierter Gast aus der Python Bridge
 export interface DeduplicatedGuest {
   id: string;                    // "G100001"
@@ -129,8 +142,8 @@ export interface DeduplicatedGuest {
   // CapHotel-Referenzen
   caphotelGuestIds: number[];    // [1234, 5678] - alle zusammengeführten Profile
 
-  // Notizen/Anfragen
-  notes?: string;                // Letzte Notiz/Anfrage-Nachricht
+  // Anfragen-Historie (Website-Formular)
+  inquiries?: GuestInquiry[];    // Alle Anfragen dieses Gastes
 
   // Statistiken
   totalBookings: number;
