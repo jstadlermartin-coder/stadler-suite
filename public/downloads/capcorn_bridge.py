@@ -443,7 +443,7 @@ def search_guests():
     limit = request.args.get('limit', 50, type=int)
 
     query = f"""
-        SELECT TOP {limit} gast, vorn, nacn, mail, teln, land, ortb
+        SELECT TOP {limit} gast, anre, vorn, nacn, mail, teln, stra, polz, ortb, land, noti, gebd
         FROM GKT
         WHERE vorn LIKE ? OR nacn LIKE ? OR mail LIKE ?
         ORDER BY gast DESC
@@ -747,10 +747,11 @@ def create_block():
     if not all([zimm, von, bis]):
         return jsonify({"error": "zimm, von, bis sind erforderlich"}), 400
 
-    # Verfuegbarkeit pruefen
+    # Verfuegbarkeit pruefen - nur aktive Buchungen (Angebote und Bestaetigte)
     query_check = """
         SELECT COUNT(*) as c FROM BUZ
         WHERE zimm = ? AND vndt <= ? AND bsdt >= ?
+        AND resn IN (SELECT resn FROM BUC WHERE stat IN (0, 2))
     """
     check = db_query(query_check, (zimm, bis, von), fetchone=True)
     if check['c'] > 0:
@@ -878,10 +879,11 @@ def create_option():
     if not all([zimm, von, bis]):
         return jsonify({"error": "zimm, von, bis sind erforderlich"}), 400
 
-    # Verfuegbarkeit pruefen
+    # Verfuegbarkeit pruefen - nur aktive Buchungen (Angebote und Bestaetigte)
     query_check = """
         SELECT COUNT(*) as c FROM BUZ
         WHERE zimm = ? AND vndt <= ? AND bsdt >= ?
+        AND resn IN (SELECT resn FROM BUC WHERE stat IN (0, 2))
     """
     check = db_query(query_check, (zimm, bis, von), fetchone=True)
     if check['c'] > 0:
@@ -1011,11 +1013,11 @@ def create_booking_with_price():
     if not all([zimm, von, bis]):
         return jsonify({"error": "zimm, von, bis sind erforderlich"}), 400
 
-    # Verfuegbarkeit pruefen
+    # Verfuegbarkeit pruefen - nur aktive Buchungen (Angebote und Bestaetigte)
     query_check = """
         SELECT COUNT(*) as c FROM BUZ
         WHERE zimm = ? AND vndt <= ? AND bsdt >= ?
-        AND resn IN (SELECT resn FROM BUC WHERE stat = 2)
+        AND resn IN (SELECT resn FROM BUC WHERE stat IN (0, 2))
     """
     check = db_query(query_check, (zimm, bis, von), fetchone=True)
     if check['c'] > 0:
@@ -1118,7 +1120,13 @@ def create_booking_with_price():
 
 @app.route('/cancel/<int:resn>', methods=['DELETE'])
 def cancel_booking(resn):
-    """Buchung stornieren"""
+    """
+    Buchung stornieren
+
+    BUZ-Eintraege werden NICHT geloescht, damit die Historie erhalten bleibt.
+    Das Zimmer wird durch die Verfuegbarkeitspruefung (stat IN (0, 2)) freigegeben,
+    da stornierte Buchungen (stat = 65536) ignoriert werden.
+    """
     # Pruefen ob Buchung existiert
     booking = db_query("SELECT resn, stat FROM BUC WHERE resn = ?", (resn,), fetchone=True)
 
@@ -1129,11 +1137,11 @@ def cancel_booking(resn):
     cursor = conn.cursor()
 
     try:
-        # BUZ loeschen
-        cursor.execute("DELETE FROM BUZ WHERE resn = ?", (resn,))
+        # BUZ NICHT loeschen - bleibt fuer Historie erhalten
+        # Das Zimmer wird durch die Verfuegbarkeitspruefung freigegeben,
+        # die nur stat IN (0, 2) beruecksichtigt
 
-        # BUC Status auf storniert setzen (oder loeschen)
-        # Wir setzen stat auf 65536 (storniert)
+        # BUC Status auf storniert setzen
         cursor.execute("UPDATE BUC SET stat = 65536 WHERE resn = ?", (resn,))
 
         conn.commit()
@@ -1141,7 +1149,7 @@ def cancel_booking(resn):
         return jsonify({
             "success": True,
             "resn": resn,
-            "message": f"Buchung {resn} wurde storniert"
+            "message": f"Buchung {resn} wurde storniert (Historie bleibt erhalten)"
         })
 
     except Exception as e:

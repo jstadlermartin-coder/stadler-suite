@@ -11,7 +11,7 @@ Laeuft im System-Tray und startet automatisch mit Windows.
 # ============================================================================
 # VERSION
 # ============================================================================
-BRIDGE_VERSION = "4.3.0"  # 2026-01-20: OTA-Support (extn, channelName)
+BRIDGE_VERSION = "7.0.0"  # 2026-01-28: Kundennummer-System (startet bei 1, Format K0.000.001)
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -1431,7 +1431,11 @@ def get_guest_key(guest):
     return ('caphotel', str(guest.get('gast', 0)))
 
 def get_next_customer_number():
-    """Holt die naechste Kundennummer mit Firestore Transaction"""
+    """Holt die naechste Kundennummer mit Firestore Transaction.
+
+    Kundennummern starten bei 1 und werden im Frontend als K0.000.001 formatiert.
+    Format: K + 7 Stellen mit Punkt-Trennung (K0.000.001 bis K9.999.999)
+    """
     try:
         counter_ref = firebase_db.collection('counters').document('guests')
 
@@ -1439,9 +1443,9 @@ def get_next_customer_number():
         def update_counter(transaction):
             snapshot = counter_ref.get(transaction=transaction)
             if snapshot.exists:
-                current = snapshot.to_dict().get('lastNumber', 100000)
+                current = snapshot.to_dict().get('lastNumber', 0)
             else:
-                current = 100000
+                current = 0
             next_number = current + 1
             transaction.set(counter_ref, {'lastNumber': next_number})
             return next_number
@@ -1452,7 +1456,7 @@ def get_next_customer_number():
         print(f"Error getting next customer number: {e}")
         # Fallback: Use timestamp-based number
         import random
-        return 100000 + random.randint(1, 99999)
+        return random.randint(1, 99999)
 
 def merge_guest_profiles(profiles, bookings_data):
     """Merged mehrere CapHotel-Profile zu einem deduplizierten Gast"""

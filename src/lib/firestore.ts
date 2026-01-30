@@ -1285,3 +1285,124 @@ export async function saveGuestNotificationSettings(settings: GuestNotificationS
     return false;
   }
 }
+
+// ============ OFFER INQUIRIES (Offer-Office) ============
+
+export type OfferInquiryStatus = 'lost' | 'lead' | 'offer' | 'booked';
+export type OfferInquirySource = 'bridge' | 'form' | 'email' | 'whatsapp' | 'manual';
+
+export interface OfferInquiry {
+  id: string;
+  status: OfferInquiryStatus;
+  source: OfferInquirySource;           // Woher kam die Anfrage?
+
+  // Kontaktdaten
+  customerName: string;
+  email: string;
+  phone?: string;
+
+  // Aufenthalt
+  checkIn: string;                       // DD.MM.YYYY
+  checkOut: string;                      // DD.MM.YYYY
+  adults: number;
+  children: number;
+  childrenAges?: number[];
+
+  // Zimmer/Kategorie
+  selectedCategories: string[];
+
+  // CapCorn-Verknüpfung
+  capCornResn?: number;                  // Reservierungsnummer in CapCorn
+  zimmer?: number;                       // Zimmer-Nummer für Block
+
+  // Preis & Notizen
+  totalPrice?: number;
+  notes?: string;
+
+  // Zeitstempel
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// Alle Inquiries laden
+export async function getOfferInquiries(): Promise<OfferInquiry[]> {
+  try {
+    const querySnapshot = await getDocs(collection(db, 'offerInquiries'));
+    const inquiries: OfferInquiry[] = [];
+    querySnapshot.forEach((docSnap) => {
+      inquiries.push({ id: docSnap.id, ...docSnap.data() } as OfferInquiry);
+    });
+    // Nach Erstellungsdatum sortieren (neueste zuerst)
+    return inquiries.sort((a, b) => {
+      const dateA = parseGermanDate(a.createdAt);
+      const dateB = parseGermanDate(b.createdAt);
+      return dateB.getTime() - dateA.getTime();
+    });
+  } catch (error) {
+    console.error('Error getting offer inquiries:', error);
+    return [];
+  }
+}
+
+// Helper: DD.MM.YYYY zu Date
+function parseGermanDate(dateStr: string): Date {
+  const [day, month, year] = dateStr.split('.').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+// Inquiry hinzufügen
+export async function addOfferInquiry(inquiry: Omit<OfferInquiry, 'id'>): Promise<string | null> {
+  try {
+    const docRef = await addDoc(collection(db, 'offerInquiries'), removeUndefined({
+      ...inquiry,
+      createdAt: inquiry.createdAt || new Date().toLocaleDateString('de-DE'),
+      updatedAt: new Date().toISOString()
+    }));
+    return docRef.id;
+  } catch (error) {
+    console.error('Error adding offer inquiry:', error);
+    return null;
+  }
+}
+
+// Inquiry aktualisieren
+export async function updateOfferInquiry(id: string, updates: Partial<OfferInquiry>): Promise<boolean> {
+  try {
+    const docRef = doc(db, 'offerInquiries', id);
+    await updateDoc(docRef, removeUndefined({
+      ...updates,
+      updatedAt: new Date().toISOString()
+    }));
+    return true;
+  } catch (error) {
+    console.error('Error updating offer inquiry:', error);
+    return false;
+  }
+}
+
+// Inquiry löschen
+export async function deleteOfferInquiry(id: string): Promise<boolean> {
+  try {
+    await deleteDoc(doc(db, 'offerInquiries', id));
+    return true;
+  } catch (error) {
+    console.error('Error deleting offer inquiry:', error);
+    return false;
+  }
+}
+
+// Inquiry nach CapCorn Resn suchen
+export async function getOfferInquiryByResn(resn: number): Promise<OfferInquiry | null> {
+  try {
+    const q = query(collection(db, 'offerInquiries'), where('capCornResn', '==', resn));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      const docSnap = querySnapshot.docs[0];
+      return { id: docSnap.id, ...docSnap.data() } as OfferInquiry;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting offer inquiry by resn:', error);
+    return null;
+  }
+}

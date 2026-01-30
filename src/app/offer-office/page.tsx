@@ -1,31 +1,23 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Plus, X, User, Calendar, Users, ChevronRight, ChevronLeft, MessageSquare, Link2, Mail, Phone, MapPin, Baby, Minus, Check, Send, Copy, Trash2, ExternalLink, Loader2, Euro, CalendarDays, UserCheck, BedDouble, Eye, EyeOff } from 'lucide-react';
 import { CustomerDetailSheet, CustomerData, BookingItem } from '@/components/drawers/CustomerDetailSheet';
+import { bridgeAPI, BridgeRoom } from '@/lib/bridge';
+import {
+  OfferInquiry,
+  OfferInquiryStatus,
+  getOfferInquiries,
+  addOfferInquiry,
+  updateOfferInquiry
+} from '@/lib/firestore';
 
 // Time filter type
 type TimeFilter = 'week' | 'month' | 'year' | 'all';
 
-// Types
-type InquiryStatus = 'lost' | 'lead' | 'offer' | 'booked';
-
-interface Inquiry {
-  id: string;
-  status: InquiryStatus;
-  customerName: string;
-  email: string;
-  phone?: string;
-  checkIn: string;
-  checkOut: string;
-  adults: number;
-  children: number;
-  childrenAges?: number[];
-  selectedCategories: string[];
-  notes?: string;
-  createdAt: string;
-  totalPrice?: number;
-}
+// Alias für lokale Verwendung (Firestore-Type)
+type Inquiry = OfferInquiry;
+type InquiryStatus = OfferInquiryStatus;
 
 interface ChildPriceTier {
   id: string;
@@ -286,6 +278,7 @@ function BookingWizardDrawer({
 
     onSubmit({
       status: action === 'book' ? 'booked' : 'lead',
+      source: 'manual',
       customerName: name,
       email,
       phone: phone || undefined,
@@ -870,13 +863,17 @@ function InquiryDetailDrawer({
   onClose,
   inquiry,
   roomCategories,
-  onStatusChange
+  onStatusChange,
+  onZimmerChange,
+  capCornRooms
 }: {
   isOpen: boolean;
   onClose: () => void;
   inquiry: Inquiry | null;
   roomCategories: RoomCategory[];
   onStatusChange: (id: string, status: InquiryStatus) => void;
+  onZimmerChange: (id: string, zimmer: number) => void;
+  capCornRooms: BridgeRoom[];
 }) {
   const [activeTab, setActiveTab] = useState<'details' | 'rooms'>('details');
   const [showAllRooms, setShowAllRooms] = useState(false);
@@ -1092,6 +1089,35 @@ function InquiryDetailDrawer({
           {/* Rooms Tab */}
           {activeTab === 'rooms' && (
             <div className="space-y-4">
+              {/* CapCorn Zimmer-Auswahl für Block */}
+              {capCornRooms.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <BedDouble className="h-5 w-5 text-amber-600" />
+                    <span className="font-medium text-amber-900">CapCorn Zimmer zuweisen</span>
+                  </div>
+                  <select
+                    value={inquiry.zimmer || ''}
+                    onChange={(e) => onZimmerChange(inquiry.id, Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="">Zimmer wählen...</option>
+                    {capCornRooms.map((room) => (
+                      <option key={room.zimn} value={room.zimn}>
+                        {room.name} (Zimmer {room.zimn})
+                      </option>
+                    ))}
+                  </select>
+                  {inquiry.zimmer && (
+                    <p className="text-xs text-amber-700 mt-2">
+                      {inquiry.capCornResn
+                        ? `✓ In CapCorn blockiert (Resn: ${inquiry.capCornResn})`
+                        : 'Wechsle zu "Offer" um Block in CapCorn anzulegen'}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Toggle: Show All Rooms */}
               <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                 <span className="text-sm text-slate-700">
@@ -1205,6 +1231,20 @@ export default function OfferOfficePage() {
   const [cdsOpen, setCdsOpen] = useState(false);
   const [inquiryDetailOpen, setInquiryDetailOpen] = useState(false);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [capCornRooms, setCapCornRooms] = useState<BridgeRoom[]>([]);
+
+  // CapCorn Zimmer laden
+  useEffect(() => {
+    const loadRooms = async () => {
+      try {
+        const rooms = await bridgeAPI.getRooms();
+        setCapCornRooms(rooms);
+      } catch (error) {
+        console.error('Fehler beim Laden der CapCorn Zimmer:', error);
+      }
+    };
+    loadRooms();
+  }, []);
 
   // Demo Zimmerkategorien
   const roomCategories: RoomCategory[] = [
@@ -1222,65 +1262,25 @@ export default function OfferOfficePage() {
     { id: 'teen', ageFrom: 13, ageTo: 17, price: 45 },
   ];
 
-  // Demo Anfragen
-  const [inquiries, setInquiries] = useState<Inquiry[]>([
-    {
-      id: '1',
-      status: 'lead',
-      customerName: 'Max Mustermann',
-      email: 'max.mustermann@example.com',
-      phone: '+43 664 1234567',
-      checkIn: '15.02.2025',
-      checkOut: '18.02.2025',
-      adults: 2,
-      children: 0,
-      selectedCategories: ['1'],
-      createdAt: '10.01.2025',
-      totalPrice: 510
-    },
-    {
-      id: '2',
-      status: 'offer',
-      customerName: 'Maria Musterfrau',
-      email: 'maria@example.com',
-      checkIn: '20.03.2025',
-      checkOut: '25.03.2025',
-      adults: 2,
-      children: 2,
-      childrenAges: [5, 8],
-      selectedCategories: ['4'],
-      notes: 'Kinderbetten gewünscht',
-      createdAt: '08.01.2025',
-      totalPrice: 665
-    },
-    {
-      id: '3',
-      status: 'booked',
-      customerName: 'Hans Huber',
-      email: 'hans.huber@gmx.at',
-      phone: '+43 660 9876543',
-      checkIn: '01.02.2025',
-      checkOut: '05.02.2025',
-      adults: 1,
-      children: 0,
-      selectedCategories: ['3'],
-      createdAt: '05.01.2025',
-      totalPrice: 260
-    },
-    {
-      id: '4',
-      status: 'lost',
-      customerName: 'Anna Schmidt',
-      email: 'anna.schmidt@web.de',
-      checkIn: '10.01.2025',
-      checkOut: '12.01.2025',
-      adults: 2,
-      children: 0,
-      selectedCategories: ['1'],
-      createdAt: '01.01.2025',
-      totalPrice: 170
+  // Inquiries aus Firestore
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Inquiries aus Firestore laden
+  const loadInquiries = useCallback(async () => {
+    try {
+      const data = await getOfferInquiries();
+      setInquiries(data);
+    } catch (error) {
+      console.error('Fehler beim Laden der Anfragen:', error);
+    } finally {
+      setIsLoading(false);
     }
-  ]);
+  }, []);
+
+  useEffect(() => {
+    loadInquiries();
+  }, [loadInquiries]);
 
   // Filter inquiries by time
   const filteredInquiries = useMemo(() => {
@@ -1309,26 +1309,99 @@ export default function OfferOfficePage() {
     });
   }, [inquiries, timeFilter]);
 
-  const handleCreateBooking = (data: Omit<Inquiry, 'id' | 'createdAt'>, action: 'inquiry' | 'book') => {
-    const newInquiry: Inquiry = {
-      ...data,
-      id: Date.now().toString(),
-      createdAt: new Date().toLocaleDateString('de-DE')
-    };
-    setInquiries([newInquiry, ...inquiries]);
+  const handleCreateBooking = async (data: Omit<Inquiry, 'id' | 'createdAt'>, action: 'inquiry' | 'book') => {
+    try {
+      const newId = await addOfferInquiry({
+        ...data,
+        createdAt: new Date().toLocaleDateString('de-DE')
+      });
 
-    // Here you would send email/WhatsApp notification
-    if (action === 'book') {
-      console.log('Sending booking confirmation...');
-      // TODO: Send confirmation email/WhatsApp
-    } else {
-      console.log('Sending inquiry/offer...');
-      // TODO: Send offer email/WhatsApp
+      if (newId) {
+        // Lokalen State aktualisieren
+        const newInquiry: Inquiry = {
+          ...data,
+          id: newId,
+          createdAt: new Date().toLocaleDateString('de-DE')
+        };
+        setInquiries(prev => [newInquiry, ...prev]);
+
+        // TODO: Send email/WhatsApp notification
+        if (action === 'book') {
+          console.log('Sending booking confirmation...');
+        } else {
+          console.log('Sending inquiry/offer...');
+        }
+      }
+    } catch (error) {
+      console.error('Fehler beim Erstellen der Anfrage:', error);
     }
   };
 
-  const handleStatusChange = (id: string, status: InquiryStatus) => {
-    setInquiries(inquiries.map(i => i.id === id ? { ...i, status } : i));
+  // Datums-Konvertierung: "15.01.2026" → "2026-01-15"
+  const formatDateForCapCorn = (dateStr: string): string => {
+    const [day, month, year] = dateStr.split('.');
+    return `${year}-${month}-${day}`;
+  };
+
+  const handleStatusChange = async (id: string, newStatus: InquiryStatus) => {
+    const inquiry = inquiries.find(i => i.id === id);
+    if (!inquiry) return;
+
+    try {
+      let updates: Partial<Inquiry> = { status: newStatus };
+
+      // Lead → Offer: Block in CapCorn anlegen (wenn Zimmer ausgewählt)
+      if (newStatus === 'offer' && !inquiry.capCornResn && inquiry.zimmer) {
+        const result = await bridgeAPI.createBlock({
+          zimm: inquiry.zimmer,
+          von: formatDateForCapCorn(inquiry.checkIn),
+          bis: formatDateForCapCorn(inquiry.checkOut),
+          grund: `Angebot: ${inquiry.customerName}`,
+        });
+        updates.capCornResn = result.resn;
+      }
+
+      // Offer → Booked: Bestätigen in CapCorn
+      if (newStatus === 'booked' && inquiry.capCornResn) {
+        await bridgeAPI.confirmBooking(inquiry.capCornResn);
+      }
+
+      // Offer/Booked → Lost: Stornieren (unsichtbar, aber Historie bleibt)
+      if (newStatus === 'lost' && inquiry.capCornResn) {
+        await bridgeAPI.cancelBooking(inquiry.capCornResn);
+      }
+
+      // In Firestore speichern
+      await updateOfferInquiry(id, updates);
+
+      // Lokalen State aktualisieren
+      setInquiries(prev => prev.map(i =>
+        i.id === id ? { ...i, ...updates } : i
+      ));
+    } catch (error) {
+      console.error('CapCorn/Firestore Operation fehlgeschlagen:', error);
+      // Trotzdem Status lokal ändern und in Firestore speichern
+      try {
+        await updateOfferInquiry(id, { status: newStatus });
+        setInquiries(prev => prev.map(i =>
+          i.id === id ? { ...i, status: newStatus } : i
+        ));
+      } catch {
+        console.error('Firestore Update fehlgeschlagen');
+      }
+    }
+  };
+
+  // Zimmer-Zuweisung für Anfrage
+  const handleZimmerChange = async (id: string, zimmer: number) => {
+    try {
+      await updateOfferInquiry(id, { zimmer });
+      setInquiries(prev => prev.map(i =>
+        i.id === id ? { ...i, zimmer } : i
+      ));
+    } catch (error) {
+      console.error('Fehler beim Speichern der Zimmer-Zuweisung:', error);
+    }
   };
 
   const handleInquiryClick = (inquiry: Inquiry) => {
@@ -1414,18 +1487,27 @@ export default function OfferOfficePage() {
 
       {/* Kanban Board */}
       <div className="flex-1 overflow-x-auto p-6">
-        <div className="flex flex-col md:flex-row gap-4 h-full md:justify-center md:items-start">
-          {columns.map((column) => (
-            <KanbanColumn
-              key={column.status}
-              title={column.title}
-              status={column.status}
-              inquiries={filteredInquiries}
-              color={column.color}
-              onInquiryClick={handleInquiryClick}
-            />
-          ))}
-        </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-3" />
+              <p className="text-slate-500">Anfragen werden geladen...</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col md:flex-row gap-4 h-full md:justify-center md:items-start">
+            {columns.map((column) => (
+              <KanbanColumn
+                key={column.status}
+                title={column.title}
+                status={column.status}
+                inquiries={filteredInquiries}
+                color={column.color}
+                onInquiryClick={handleInquiryClick}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
 
@@ -1453,6 +1535,8 @@ export default function OfferOfficePage() {
         inquiry={selectedInquiry}
         roomCategories={roomCategories}
         onStatusChange={handleStatusChange}
+        onZimmerChange={handleZimmerChange}
+        capCornRooms={capCornRooms}
       />
     </div>
   );
