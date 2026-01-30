@@ -129,6 +129,9 @@ export interface DeduplicatedGuest {
   // CapHotel-Referenzen
   caphotelGuestIds: number[];    // [1234, 5678] - alle zusammengeführten Profile
 
+  // Notizen/Anfragen
+  notes?: string;                // Letzte Notiz/Anfrage-Nachricht
+
   // Statistiken
   totalBookings: number;
   totalRevenue: number;
@@ -715,6 +718,7 @@ export interface CaphotelGuest {
   ortb?: string;             // Ort
   land?: string;
   gebd?: string;             // Geburtsdatum
+  noti?: string;             // Notizen/Anfrage-Nachricht vom Formular
   syncedAt: string;
 }
 

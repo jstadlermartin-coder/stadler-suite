@@ -88,8 +88,8 @@ export async function findOrCreateGuest(caphotelGuest: CaphotelGuest): Promise<G
   if (phoneNormalized) {
     const phoneLookup = await getGuestByLookup('phone', phoneNormalized);
     if (phoneLookup) {
-      // Existierenden Gast gefunden - CapHotel-ID hinzufügen
-      await addCaphotelIdToGuest(phoneLookup.guestId, caphotelGuest.gast);
+      // Existierenden Gast gefunden - CapHotel-ID und Notizen hinzufügen
+      await addCaphotelIdToGuest(phoneLookup.guestId, caphotelGuest.gast, caphotelGuest.noti);
       return {
         guestId: phoneLookup.guestId,
         customerNumber: phoneLookup.customerNumber,
@@ -103,8 +103,8 @@ export async function findOrCreateGuest(caphotelGuest: CaphotelGuest): Promise<G
   if (emailNormalized) {
     const emailLookup = await getGuestByLookup('email', emailNormalized);
     if (emailLookup) {
-      // Existierenden Gast gefunden - CapHotel-ID hinzufügen
-      await addCaphotelIdToGuest(emailLookup.guestId, caphotelGuest.gast);
+      // Existierenden Gast gefunden - CapHotel-ID und Notizen hinzufügen
+      await addCaphotelIdToGuest(emailLookup.guestId, caphotelGuest.gast, caphotelGuest.noti);
 
       // Falls neue Telefonnummer, auch diese speichern
       if (phoneNormalized) {
@@ -159,6 +159,7 @@ async function createNewGuest(
     city: caphotelGuest.ortb || undefined,
     country: caphotelGuest.land || undefined,
     caphotelGuestIds: [caphotelGuest.gast],
+    notes: caphotelGuest.noti || undefined,  // Anfrage-Nachricht vom Formular
     totalBookings: 0,
     totalRevenue: 0,
     createdAt: now,
@@ -185,18 +186,30 @@ async function createNewGuest(
 }
 
 /**
- * CapHotel-ID zu bestehendem Gast hinzufügen
+ * CapHotel-ID zu bestehendem Gast hinzufügen und ggf. Notizen aktualisieren
  */
-async function addCaphotelIdToGuest(guestId: string, caphotelGuestId: number): Promise<void> {
+async function addCaphotelIdToGuest(
+  guestId: string,
+  caphotelGuestId: number,
+  notes?: string
+): Promise<void> {
   const guest = await getDeduplicatedGuestById(guestId);
   if (guest) {
-    // Nur hinzufügen wenn nicht bereits vorhanden
+    const updates: Record<string, unknown> = {
+      updatedAt: new Date().toISOString()
+    };
+
+    // CapHotel-ID hinzufügen wenn nicht vorhanden
     if (!guest.caphotelGuestIds.includes(caphotelGuestId)) {
-      await updateDeduplicatedGuest(guestId, {
-        caphotelGuestIds: [...guest.caphotelGuestIds, caphotelGuestId],
-        updatedAt: new Date().toISOString()
-      });
+      updates.caphotelGuestIds = [...guest.caphotelGuestIds, caphotelGuestId];
     }
+
+    // Notizen aktualisieren wenn vorhanden (neuere überschreibt)
+    if (notes && notes.trim()) {
+      updates.notes = notes;
+    }
+
+    await updateDeduplicatedGuest(guestId, updates);
   }
 }
 
