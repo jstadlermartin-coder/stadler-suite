@@ -4,6 +4,8 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { useBookingWizard } from '@/components/booking/NewBookingWizard';
 import { getBookings, getCategories, getBuildings, Booking, Category, Building } from '@/lib/firestore';
+import { getHolidaySettings } from '@/lib/holiday-settings';
+import { getHolidayInfoForDate, HolidaySettings, defaultHolidaySettings } from '@/lib/holidays';
 
 interface DisplayRoom {
   id: string;
@@ -95,6 +97,7 @@ export default function CalendarPage() {
   const [rooms, setRooms] = useState<DisplayRoom[]>([]);
   const [bookings, setBookings] = useState<DisplayBooking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [holidaySettings, setHolidaySettings] = useState<HolidaySettings>(defaultHolidaySettings);
 
   const { open: openBookingWizard } = useBookingWizard();
 
@@ -103,11 +106,14 @@ export default function CalendarPage() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [categoriesData, bookingsData, buildingsData] = await Promise.all([
+        const [categoriesData, bookingsData, buildingsData, holidaySettingsData] = await Promise.all([
           getCategories(),
           getBookings(),
-          getBuildings()
+          getBuildings(),
+          getHolidaySettings()
         ]);
+
+        setHolidaySettings(holidaySettingsData);
 
         // Create building lookup map
         const buildingMap = new Map<string, Building>();
@@ -503,18 +509,25 @@ export default function CalendarPage() {
                 const inMonth = isSameMonth(day, viewMonth);
                 const selected = isSameDay(day, currentDate);
                 const today = isToday(day);
+                const holidayInfo = getHolidayInfoForDate(day, holidaySettings);
+                const hasHoliday = holidayInfo !== null;
 
                 return (
                   <button
                     key={idx}
                     onClick={() => handleDayClick(day)}
-                    className={`h-9 w-9 mx-auto rounded-full text-sm font-medium transition-all
+                    title={hasHoliday ? holidayInfo.name : undefined}
+                    className={`h-9 w-9 mx-auto rounded-full text-sm font-medium transition-all relative
                       ${!inMonth ? 'text-slate-300' : 'text-slate-700 hover:bg-slate-100'}
                       ${selected ? 'bg-blue-500 text-white hover:bg-blue-600' : ''}
                       ${today && !selected ? 'text-blue-600 ring-1 ring-blue-300' : ''}
+                      ${hasHoliday && !selected ? 'ring-2 ring-orange-400' : ''}
                     `}
                   >
                     {day.getDate()}
+                    {hasHoliday && (
+                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-orange-500" />
+                    )}
                   </button>
                 );
               })}
@@ -560,19 +573,40 @@ export default function CalendarPage() {
                   <th className="sticky left-0 z-10 bg-slate-50 border-b border-r border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-700 w-[140px]">
                     Zimmer
                   </th>
-                  {dates.map((date, index) => (
-                    <th
-                      key={index}
-                      className={`border-b border-slate-200 px-1 py-2 text-center ${
-                        isWeekend(date) ? 'bg-slate-100' : ''
-                      } ${isToday(date) ? 'bg-blue-500 text-white' : ''}`}
-                    >
-                      <div className={`text-xs ${isToday(date) ? 'text-blue-100' : 'text-slate-500'}`}>{formatDay(date)}</div>
-                      <div className={`text-lg font-semibold ${isToday(date) ? 'text-white' : 'text-slate-700'}`}>
-                        {formatDate(date)}
-                      </div>
-                    </th>
-                  ))}
+                  {dates.map((date, index) => {
+                    const holidayInfo = getHolidayInfoForDate(date, holidaySettings);
+                    const hasHoliday = holidayInfo !== null;
+
+                    return (
+                      <th
+                        key={index}
+                        className={`border-b border-slate-200 px-1 py-2 text-center min-w-[60px] ${
+                          isWeekend(date) ? 'bg-slate-100' : ''
+                        } ${isToday(date) ? 'bg-blue-500 text-white' : ''}`}
+                      >
+                        <div className={`text-xs ${isToday(date) ? 'text-blue-100' : 'text-slate-500'}`}>{formatDay(date)}</div>
+                        <div className={`text-lg font-semibold ${isToday(date) ? 'text-white' : 'text-slate-700'}`}>
+                          {formatDate(date)}
+                        </div>
+                        {hasHoliday && (
+                          <div className="flex flex-col items-center mt-1">
+                            <div
+                              className="w-2 h-2 rounded-full bg-orange-500"
+                              title={holidayInfo.name}
+                            />
+                            <div
+                              className={`text-[9px] leading-tight truncate max-w-[56px] ${
+                                isToday(date) ? 'text-orange-200' : 'text-orange-600'
+                              }`}
+                              title={holidayInfo.name}
+                            >
+                              {holidayInfo.name.split('(')[0].trim()}
+                            </div>
+                          </div>
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
 

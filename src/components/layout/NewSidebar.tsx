@@ -60,9 +60,13 @@ export function HamburgerButton() {
     setMounted(true);
   }, []);
 
-  // Platzhalter für SSR - gleiche Größe wie der echte Button
+  // SSR: Zeige statisches Menu-Icon (nicht interaktiv bis hydrated)
   if (!mounted) {
-    return <div className="p-3 w-12 h-12" />;
+    return (
+      <div className="p-3 rounded-xl">
+        <Menu className="h-6 w-6 text-slate-700" />
+      </div>
+    );
   }
 
   return (
