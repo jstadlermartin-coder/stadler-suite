@@ -898,6 +898,20 @@ export async function saveSyncedRooms(rooms: CaphotelRoom[]): Promise<boolean> {
   }
 }
 
+export async function getSyncedRooms(): Promise<CaphotelRoom[]> {
+  try {
+    const docRef = doc(db, 'caphotelSync', 'rooms');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data().items as CaphotelRoom[];
+    }
+    return [];
+  } catch (error) {
+    console.error('Error getting synced rooms:', error);
+    return [];
+  }
+}
+
 // Save synced channels
 export async function saveSyncedChannels(channels: CaphotelChannel[]): Promise<boolean> {
   try {

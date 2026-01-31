@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -54,6 +54,16 @@ const navigation = [
 
 export function HamburgerButton() {
   const { toggle, isOpen } = useSidebar();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Platzhalter für SSR - gleiche Größe wie der echte Button
+  if (!mounted) {
+    return <div className="p-3 w-12 h-12" />;
+  }
 
   return (
     <button

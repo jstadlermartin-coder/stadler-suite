@@ -1,8 +1,19 @@
 'use client';
 
-import { useState } from 'react';
-import { Users, Hotel, ArrowUpRight, ArrowDownRight, X, ChevronRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Users, Hotel, ArrowUpRight, ArrowDownRight, X, ChevronRight, BarChart3, LayoutDashboard } from 'lucide-react';
 import { CustomerDetailSheet } from '@/components/drawers/CustomerDetailSheet';
+import { getSyncedBookings, CaphotelBooking, getSyncedRooms } from '@/lib/firestore';
+import {
+  getArrivalsForDate,
+  getDeparturesForDate,
+  getDashboardStats,
+  formatArrivalTime
+} from '@/lib/dashboard-utils';
+import DateNavigation from '@/components/dashboard/DateNavigation';
+import DashboardStats from '@/components/dashboard/DashboardStats';
+import { getHolidaySettings } from '@/lib/holiday-settings';
+import { HolidaySettings, defaultHolidaySettings } from '@/lib/holidays';
 
 // Types
 interface Arrival {
@@ -14,6 +25,7 @@ interface Arrival {
   room: string;
   checkIn: string;
   guests: number;
+  resn: number;
 }
 
 interface Departure {
@@ -24,17 +36,7 @@ interface Departure {
   phone?: string;
   room: string;
   checkOut: string;
-}
-
-interface Guest {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email?: string;
-  phone?: string;
-  street?: string;
-  city?: string;
-  country?: string;
+  resn: number;
 }
 
 // Arrivals/Departures Fullscreen Drawer
@@ -64,7 +66,7 @@ function ListDrawer({
               {isArrivals ? <ArrowDownRight className="h-5 w-5 text-green-600" /> : <ArrowUpRight className="h-5 w-5 text-orange-600" />}
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">{isArrivals ? 'Ankünfte' : 'Abreisen'} heute</h2>
+              <h2 className="text-lg font-semibold text-slate-900">{isArrivals ? 'Ankünfte' : 'Abreisen'}</h2>
               <p className="text-sm text-slate-500">{items.length} Gäste</p>
             </div>
           </div>
@@ -75,63 +77,133 @@ function ListDrawer({
 
         {/* Fullscreen List - Full Width Cards */}
         <div className="p-4 overflow-auto h-[calc(100%-88px)]">
-          <div className="space-y-3">
-            {items.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => onItemClick(item)}
-                className="w-full flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-colors text-left"
-              >
-                <div className={`h-14 w-14 rounded-full ${isArrivals ? 'bg-green-100' : 'bg-orange-100'} flex items-center justify-center flex-shrink-0`}>
-                  {isArrivals ? <ArrowDownRight className="h-7 w-7 text-green-600" /> : <ArrowUpRight className="h-7 w-7 text-orange-600" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900 text-xl">{item.name}</p>
-                  <p className="text-base text-slate-500">
-                    Zimmer {item.room}
-                    {'guests' in item && ` • ${item.guests} ${item.guests === 1 ? 'Gast' : 'Gäste'}`}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-slate-400">
-                    {'checkIn' in item ? item.checkIn : item.checkOut}
-                  </p>
-                </div>
-                <ChevronRight className="h-6 w-6 text-slate-300" />
-              </button>
-            ))}
-          </div>
+          {items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+              <div className={`h-16 w-16 rounded-full ${isArrivals ? 'bg-green-50' : 'bg-orange-50'} flex items-center justify-center mb-4`}>
+                {isArrivals ? <ArrowDownRight className="h-8 w-8 text-green-300" /> : <ArrowUpRight className="h-8 w-8 text-orange-300" />}
+              </div>
+              <p className="text-lg font-medium">Keine {isArrivals ? 'Ankünfte' : 'Abreisen'}</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {items.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => onItemClick(item)}
+                  className="w-full flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-colors text-left"
+                >
+                  <div className={`h-14 w-14 rounded-full ${isArrivals ? 'bg-green-100' : 'bg-orange-100'} flex items-center justify-center flex-shrink-0`}>
+                    {isArrivals ? <ArrowDownRight className="h-7 w-7 text-green-600" /> : <ArrowUpRight className="h-7 w-7 text-orange-600" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900 text-xl">{item.name}</p>
+                    <p className="text-base text-slate-500">
+                      Zimmer {item.room}
+                      {'guests' in item && ` • ${item.guests} ${item.guests === 1 ? 'Gast' : 'Gäste'}`}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-slate-400">
+                      {'checkIn' in item ? item.checkIn : item.checkOut}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-6 w-6 text-slate-300" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </>
   );
 }
 
+// Convert CaphotelBooking to Arrival
+function bookingToArrival(booking: CaphotelBooking): Arrival {
+  const roomNumbers = booking.rooms?.map(r => r.roomName || r.zimm.toString()).join(', ') || '-';
+  const guestCount = booking.rooms?.reduce((sum, r) => sum + (r.pers || 0) + (r.kndr || 0), 0) || 1;
+
+  return {
+    id: booking.resn.toString(),
+    guestId: booking.gast.toString(),
+    name: booking.guestName || 'Unbekannt',
+    email: booking.guestEmail,
+    phone: booking.guestPhone,
+    room: roomNumbers,
+    checkIn: formatArrivalTime(new Date(booking.andf)),
+    guests: guestCount,
+    resn: booking.resn
+  };
+}
+
+// Convert CaphotelBooking to Departure
+function bookingToDeparture(booking: CaphotelBooking): Departure {
+  const roomNumbers = booking.rooms?.map(r => r.roomName || r.zimm.toString()).join(', ') || '-';
+
+  return {
+    id: booking.resn.toString(),
+    guestId: booking.gast.toString(),
+    name: booking.guestName || 'Unbekannt',
+    email: booking.guestEmail,
+    phone: booking.guestPhone,
+    room: roomNumbers,
+    checkOut: formatArrivalTime(new Date(booking.ande)),
+    resn: booking.resn
+  };
+}
+
 export default function Dashboard() {
+  // State
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [bookings, setBookings] = useState<CaphotelBooking[]>([]);
+  const [totalRooms, setTotalRooms] = useState(16); // Default, wird aus Firebase geladen
+  const [isLoading, setIsLoading] = useState(true);
+  const [holidaySettings, setHolidaySettings] = useState<HolidaySettings>(defaultHolidaySettings);
+
+  // View Mode: Dashboard or Stats
+  const [viewMode, setViewMode] = useState<'dashboard' | 'stats'>('dashboard');
+
   // Drawer states
   const [listDrawerOpen, setListDrawerOpen] = useState(false);
   const [listDrawerType, setListDrawerType] = useState<'arrivals' | 'departures'>('arrivals');
   const [cdsOpen, setCdsOpen] = useState(false);
   const [selectedGuest, setSelectedGuest] = useState<{ id: string; name: string; email?: string; phone?: string } | null>(null);
 
-  // Demo-Daten
-  const todayStats = {
-    arrivals: 3,
-    departures: 2,
-    inHouse: 12,
-    available: 4
-  };
+  // Load data from Firebase
+  useEffect(() => {
+    async function loadData() {
+      setIsLoading(true);
+      try {
+        const [bookingsData, roomsData, settings] = await Promise.all([
+          getSyncedBookings(),
+          getSyncedRooms(),
+          getHolidaySettings()
+        ]);
 
-  const upcomingArrivals: Arrival[] = [
-    { id: '1', guestId: 'g1', name: 'Max Mustermann', email: 'max@example.com', phone: '+43 664 1234567', room: '101', checkIn: 'Heute, 14:00', guests: 2 },
-    { id: '2', guestId: 'g2', name: 'Maria Musterfrau', email: 'maria@example.com', room: '203', checkIn: 'Heute, 15:00', guests: 1 },
-    { id: '3', guestId: 'g3', name: 'Hans Huber', email: 'hans@example.com', phone: '+43 664 5555555', room: '102', checkIn: 'Heute, 16:30', guests: 2 },
-  ];
+        setBookings(bookingsData);
+        setHolidaySettings(settings);
 
-  const upcomingDepartures: Departure[] = [
-    { id: '1', guestId: 'g4', name: 'Anna Schmidt', email: 'anna@example.com', room: '301', checkOut: 'Heute, 10:00' },
-    { id: '2', guestId: 'g5', name: 'Peter Weber', email: 'peter@example.com', phone: '+49 170 1234567', room: '201', checkOut: 'Heute, 11:00' },
-  ];
+        // Setze Gesamtzimmer aus CapHotel-Sync oder verwende Default
+        if (roomsData && roomsData.length > 0) {
+          setTotalRooms(roomsData.length);
+        }
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadData();
+  }, []);
+
+  // Calculate stats for selected date
+  const stats = getDashboardStats(bookings, totalRooms, selectedDate);
+  const arrivalsData = getArrivalsForDate(bookings, selectedDate);
+  const departuresData = getDeparturesForDate(bookings, selectedDate);
+
+  const upcomingArrivals: Arrival[] = arrivalsData.map(bookingToArrival);
+  const upcomingDepartures: Departure[] = departuresData.map(bookingToDeparture);
 
   const openListDrawer = (type: 'arrivals' | 'departures') => {
     setListDrawerType(type);
@@ -159,137 +231,241 @@ export default function Dashboard() {
     setCdsOpen(true);
   };
 
+  // Format date for header
+  const formatDateHeader = (date: Date): string => {
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+    if (isToday) return 'Heute';
+
+    return date.toLocaleDateString('de-DE', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long'
+    });
+  };
+
+  // Stats View
+  if (viewMode === 'stats') {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        {/* Header with navigation */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Statistik</h1>
+            <p className="text-slate-500">Auslastung und Buchungen</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <DateNavigation
+              currentDate={selectedDate}
+              onDateChange={setSelectedDate}
+              holidaySettings={holidaySettings}
+            />
+            <button
+              onClick={() => setViewMode('dashboard')}
+              className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              title="Dashboard-Ansicht"
+            >
+              <LayoutDashboard className="h-5 w-5 text-slate-600" />
+            </button>
+          </div>
+        </div>
+
+        {/* Stats Component */}
+        <DashboardStats
+          bookings={bookings}
+          totalRooms={totalRooms}
+          startDate={selectedDate}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Dashboard</h1>
-        <p className="text-slate-500">Hotel Stadler am Attersee</p>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="bg-slate-50 rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div className="h-10 w-10 rounded-xl bg-green-100 flex items-center justify-center">
-              <ArrowDownRight className="h-5 w-5 text-green-600" />
-            </div>
-            <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded-full">
-              Heute
-            </span>
-          </div>
-          <p className="text-3xl font-bold text-slate-900 mb-1">{todayStats.arrivals}</p>
-          <p className="text-sm text-slate-500">Ankünfte</p>
-        </div>
-
-        <div className="bg-slate-50 rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div className="h-10 w-10 rounded-xl bg-orange-100 flex items-center justify-center">
-              <ArrowUpRight className="h-5 w-5 text-orange-600" />
-            </div>
-            <span className="text-xs font-medium text-orange-600 bg-orange-100 px-2 py-1 rounded-full">
-              Heute
-            </span>
-          </div>
-          <p className="text-3xl font-bold text-slate-900 mb-1">{todayStats.departures}</p>
-          <p className="text-sm text-slate-500">Abreisen</p>
-        </div>
-
-        <div className="bg-slate-50 rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div className="h-10 w-10 rounded-xl bg-blue-100 flex items-center justify-center">
-              <Users className="h-5 w-5 text-blue-600" />
-            </div>
-          </div>
-          <p className="text-3xl font-bold text-slate-900 mb-1">{todayStats.inHouse}</p>
-          <p className="text-sm text-slate-500">Im Haus</p>
-        </div>
-
-        <div className="bg-slate-50 rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div className="h-10 w-10 rounded-xl bg-slate-200 flex items-center justify-center">
-              <Hotel className="h-5 w-5 text-slate-600" />
-            </div>
-          </div>
-          <p className="text-3xl font-bold text-slate-900 mb-1">{todayStats.available}</p>
-          <p className="text-sm text-slate-500">Zimmer frei</p>
-        </div>
-      </div>
-
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Ankünfte */}
+      {/* Header with Date Navigation */}
+      <div className="flex items-center justify-between mb-8">
         <div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Dashboard</h1>
+          <p className="text-slate-500">{formatDateHeader(selectedDate)}</p>
+        </div>
+        <div className="flex items-center gap-4 relative">
+          <DateNavigation
+            currentDate={selectedDate}
+            onDateChange={setSelectedDate}
+            holidaySettings={holidaySettings}
+          />
           <button
-            onClick={() => openListDrawer('arrivals')}
-            className="w-full flex items-center justify-between mb-4 hover:bg-slate-50 -mx-2 px-2 py-1 rounded-lg transition-colors"
+            onClick={() => setViewMode('stats')}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            title="Statistik-Ansicht"
           >
-            <h2 className="text-lg font-semibold text-slate-900">Ankünfte heute</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-500">{upcomingArrivals.length} Gäste</span>
-              <ChevronRight className="h-5 w-5 text-slate-400" />
-            </div>
+            <BarChart3 className="h-5 w-5 text-slate-600" />
           </button>
-          <div className="space-y-2">
-            {upcomingArrivals.map((arrival) => (
-              <div
-                key={arrival.id}
-                onClick={() => handleGuestClick(arrival)}
-                className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+        </div>
+      </div>
+
+      {/* Loading State */}
+      {isLoading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+        </div>
+      ) : (
+        <>
+          {/* Stats */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="bg-slate-50 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="h-10 w-10 rounded-xl bg-green-100 flex items-center justify-center">
                   <ArrowDownRight className="h-5 w-5 text-green-600" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-slate-900">{arrival.name}</p>
-                  <p className="text-sm text-slate-500">
-                    Zimmer {arrival.room} • {arrival.guests} {arrival.guests === 1 ? 'Gast' : 'Gäste'}
-                  </p>
-                </div>
-                <div className="text-sm text-slate-400">
-                  {arrival.checkIn}
-                </div>
+                <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                  {formatDateHeader(selectedDate) === 'Heute' ? 'Heute' : formatDateHeader(selectedDate).split(',')[0]}
+                </span>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Abreisen */}
-        <div>
-          <button
-            onClick={() => openListDrawer('departures')}
-            className="w-full flex items-center justify-between mb-4 hover:bg-slate-50 -mx-2 px-2 py-1 rounded-lg transition-colors"
-          >
-            <h2 className="text-lg font-semibold text-slate-900">Abreisen heute</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-500">{upcomingDepartures.length} Gäste</span>
-              <ChevronRight className="h-5 w-5 text-slate-400" />
+              <p className="text-3xl font-bold text-slate-900 mb-1">{stats.arrivals}</p>
+              <p className="text-sm text-slate-500">Ankünfte</p>
             </div>
-          </button>
-          <div className="space-y-2">
-            {upcomingDepartures.map((departure) => (
-              <div
-                key={departure.id}
-                onClick={() => handleGuestClick(departure)}
-                className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+
+            <div className="bg-slate-50 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="h-10 w-10 rounded-xl bg-orange-100 flex items-center justify-center">
                   <ArrowUpRight className="h-5 w-5 text-orange-600" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-slate-900">{departure.name}</p>
-                  <p className="text-sm text-slate-500">
-                    Zimmer {departure.room}
-                  </p>
-                </div>
-                <div className="text-sm text-slate-400">
-                  {departure.checkOut}
+                <span className="text-xs font-medium text-orange-600 bg-orange-100 px-2 py-1 rounded-full">
+                  {formatDateHeader(selectedDate) === 'Heute' ? 'Heute' : formatDateHeader(selectedDate).split(',')[0]}
+                </span>
+              </div>
+              <p className="text-3xl font-bold text-slate-900 mb-1">{stats.departures}</p>
+              <p className="text-sm text-slate-500">Abreisen</p>
+            </div>
+
+            <div className="bg-slate-50 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="h-10 w-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                  <Users className="h-5 w-5 text-blue-600" />
                 </div>
               </div>
-            ))}
+              <p className="text-3xl font-bold text-slate-900 mb-1">{stats.inHouse}</p>
+              <p className="text-sm text-slate-500">Zimmer belegt</p>
+            </div>
+
+            <div className="bg-slate-50 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="h-10 w-10 rounded-xl bg-slate-200 flex items-center justify-center">
+                  <Hotel className="h-5 w-5 text-slate-600" />
+                </div>
+              </div>
+              <p className="text-3xl font-bold text-slate-900 mb-1">{stats.available}</p>
+              <p className="text-sm text-slate-500">Zimmer frei</p>
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Two Column Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Ankünfte */}
+            <div>
+              <button
+                onClick={() => openListDrawer('arrivals')}
+                className="w-full flex items-center justify-between mb-4 hover:bg-slate-50 -mx-2 px-2 py-1 rounded-lg transition-colors"
+              >
+                <h2 className="text-lg font-semibold text-slate-900">Ankünfte</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-500">{upcomingArrivals.length} Gäste</span>
+                  <ChevronRight className="h-5 w-5 text-slate-400" />
+                </div>
+              </button>
+              {upcomingArrivals.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-400 bg-slate-50 rounded-xl">
+                  <ArrowDownRight className="h-8 w-8 text-slate-300 mb-2" />
+                  <p className="text-sm">Keine Ankünfte</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {upcomingArrivals.slice(0, 5).map((arrival) => (
+                    <div
+                      key={arrival.id}
+                      onClick={() => handleGuestClick(arrival)}
+                      className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                    >
+                      <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <ArrowDownRight className="h-5 w-5 text-green-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-slate-900">{arrival.name}</p>
+                        <p className="text-sm text-slate-500">
+                          Zimmer {arrival.room} • {arrival.guests} {arrival.guests === 1 ? 'Gast' : 'Gäste'}
+                        </p>
+                      </div>
+                      <div className="text-sm text-slate-400">
+                        {arrival.checkIn}
+                      </div>
+                    </div>
+                  ))}
+                  {upcomingArrivals.length > 5 && (
+                    <button
+                      onClick={() => openListDrawer('arrivals')}
+                      className="w-full py-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      +{upcomingArrivals.length - 5} weitere anzeigen
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Abreisen */}
+            <div>
+              <button
+                onClick={() => openListDrawer('departures')}
+                className="w-full flex items-center justify-between mb-4 hover:bg-slate-50 -mx-2 px-2 py-1 rounded-lg transition-colors"
+              >
+                <h2 className="text-lg font-semibold text-slate-900">Abreisen</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-500">{upcomingDepartures.length} Gäste</span>
+                  <ChevronRight className="h-5 w-5 text-slate-400" />
+                </div>
+              </button>
+              {upcomingDepartures.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-400 bg-slate-50 rounded-xl">
+                  <ArrowUpRight className="h-8 w-8 text-slate-300 mb-2" />
+                  <p className="text-sm">Keine Abreisen</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {upcomingDepartures.slice(0, 5).map((departure) => (
+                    <div
+                      key={departure.id}
+                      onClick={() => handleGuestClick(departure)}
+                      className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                    >
+                      <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                        <ArrowUpRight className="h-5 w-5 text-orange-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-slate-900">{departure.name}</p>
+                        <p className="text-sm text-slate-500">
+                          Zimmer {departure.room}
+                        </p>
+                      </div>
+                      <div className="text-sm text-slate-400">
+                        {departure.checkOut}
+                      </div>
+                    </div>
+                  ))}
+                  {upcomingDepartures.length > 5 && (
+                    <button
+                      onClick={() => openListDrawer('departures')}
+                      className="w-full py-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      +{upcomingDepartures.length - 5} weitere anzeigen
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* List Drawer */}
       <ListDrawer

@@ -48,6 +48,8 @@ import {
 import { useBridgeSync } from '@/lib/bridge-sync-context';
 import { storage } from '@/lib/firebase';
 import { ref, getDownloadURL } from 'firebase/storage';
+import { HolidaySettings, CustomEvent, defaultHolidaySettings } from '@/lib/holidays';
+import { getHolidaySettings, saveHolidaySettings, addCustomEvent, updateCustomEvent, deleteCustomEvent } from '@/lib/holiday-settings';
 import {
   LogOut,
   Plus,
@@ -305,7 +307,7 @@ const PRICE_UNITS: { id: ArticlePriceUnit; label: string }[] = [
 export default function SettingsPage() {
   const { user, logout } = useAuth();
   const bridgeSync = useBridgeSync();
-  const [activeTab, setActiveTab] = useState<'basic' | 'resource' | 'communication' | 'bridge' | 'ai'>('basic');
+  const [activeTab, setActiveTab] = useState<'basic' | 'resource' | 'communication' | 'bridge' | 'ai' | 'calendar'>('basic');
   const [resourceSubTab, setResourceSubTab] = useState<'lage' | 'kategorie' | 'gaeste' | 'artikel'>('lage');
   const [communicationSubTab, setCommunicationSubTab] = useState<'whatsapp' | 'email' | 'email-template' | 'email-import' | 'public-pages'>('whatsapp');
   const [bridgeStatus, setBridgeStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
@@ -409,6 +411,17 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
   // Seasons State
   const [seasons, setSeasons] = useState<Season[]>([]);
 
+  // Holiday/Calendar Settings State
+  const [holidaySettings, setHolidaySettings] = useState<HolidaySettings>(defaultHolidaySettings);
+  const [holidaySettingsLoading, setHolidaySettingsLoading] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CustomEvent | null>(null);
+  const [newEvent, setNewEvent] = useState<Partial<CustomEvent>>({
+    name: '',
+    date: '',
+    color: '#3b82f6'
+  });
+  const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
+
   // Bridge State
   const [bridgeConfig, setBridgeConfig] = useState<BridgeConfig>({
     bridgeUrl: 'http://localhost:5000',
@@ -461,13 +474,14 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     const loadData = async () => {
       try {
         setLoading(true);
-        const [settings, bridgeMappings, savedSyncStatus, savedBuildings, savedArticles, savedGuestCategories] = await Promise.all([
+        const [settings, bridgeMappings, savedSyncStatus, savedBuildings, savedArticles, savedGuestCategories, savedHolidaySettings] = await Promise.all([
           loadAllSettings(),
           getBridgeMappings(),
           getSyncStatus(),
           getBuildings(),
           getAppArticles(),
-          getGuestCategories()
+          getGuestCategories(),
+          getHolidaySettings()
         ]);
 
         if (settings.hotelInfo) {
@@ -510,6 +524,11 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
         // Load guest categories
         if (savedGuestCategories && savedGuestCategories.length > 0) {
           setGuestCategories(savedGuestCategories);
+        }
+
+        // Load holiday settings
+        if (savedHolidaySettings) {
+          setHolidaySettings(savedHolidaySettings);
         }
 
         // Load lead links
@@ -1689,6 +1708,7 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
     { id: 'basic' as const, label: 'Basic', icon: Building2 },
     { id: 'resource' as const, label: 'Resource', icon: Bed },
     { id: 'communication' as const, label: 'Kommunikation', icon: MessageSquare },
+    { id: 'calendar' as const, label: 'Kalender', icon: Calendar },
     { id: 'ai' as const, label: 'KI', icon: Bot },
     { id: 'bridge' as const, label: 'Bridge', icon: Plug }
   ];
@@ -2871,6 +2891,304 @@ Unterschrift: Hotel Stadler am Attersee - Familie Stadler`
                   </ul>
                 </div>
               </div>
+            )}
+          </div>
+        ) : activeTab === 'calendar' ? (
+          /* Kalender Tab */
+          <div className="space-y-6">
+            {/* Calendar Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-cyan-600 rounded-xl p-6 text-white">
+              <div className="flex items-center gap-4">
+                <div className="h-14 w-14 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Calendar className="h-7 w-7 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">Kalender & Feiertage</h2>
+                  <p className="text-white/80">Verwalte Feiertage und eigene Events für das Dashboard</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Country Toggles */}
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h3 className="font-semibold text-slate-900 mb-4">Feiertage anzeigen</h3>
+              <div className="space-y-4">
+                <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🇦🇹</span>
+                    <div>
+                      <p className="font-medium text-slate-900">Österreich</p>
+                      <p className="text-sm text-slate-500">Gesetzliche Feiertage AT</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const newSettings = { ...holidaySettings, enableAT: !holidaySettings.enableAT };
+                      setHolidaySettings(newSettings);
+                      await saveHolidaySettings(newSettings);
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${
+                      holidaySettings.enableAT ? 'bg-blue-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                        holidaySettings.enableAT ? 'translate-x-6' : ''
+                      }`}
+                    />
+                  </button>
+                </label>
+
+                <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🇩🇪</span>
+                    <div>
+                      <p className="font-medium text-slate-900">Deutschland</p>
+                      <p className="text-sm text-slate-500">Gesetzliche Feiertage DE</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const newSettings = { ...holidaySettings, enableDE: !holidaySettings.enableDE };
+                      setHolidaySettings(newSettings);
+                      await saveHolidaySettings(newSettings);
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${
+                      holidaySettings.enableDE ? 'bg-blue-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                        holidaySettings.enableDE ? 'translate-x-6' : ''
+                      }`}
+                    />
+                  </button>
+                </label>
+
+                <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🇨🇭</span>
+                    <div>
+                      <p className="font-medium text-slate-900">Schweiz</p>
+                      <p className="text-sm text-slate-500">Gesetzliche Feiertage CH</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const newSettings = { ...holidaySettings, enableCH: !holidaySettings.enableCH };
+                      setHolidaySettings(newSettings);
+                      await saveHolidaySettings(newSettings);
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${
+                      holidaySettings.enableCH ? 'bg-blue-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                        holidaySettings.enableCH ? 'translate-x-6' : ''
+                      }`}
+                    />
+                  </button>
+                </label>
+              </div>
+            </div>
+
+            {/* Custom Events */}
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-slate-900">Eigene Events</h3>
+                  <p className="text-sm text-slate-500">Spezielle Tage markieren (z.B. Betriebsurlaub, Events)</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditingEvent(null);
+                    setNewEvent({ name: '', date: '', color: '#3b82f6' });
+                    setEventDrawerOpen(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  Event hinzufügen
+                </button>
+              </div>
+
+              {/* Events List */}
+              <div className="divide-y divide-slate-100">
+                {holidaySettings.customEvents.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400">
+                    <Calendar className="h-12 w-12 mx-auto mb-3 text-slate-300" />
+                    <p>Noch keine eigenen Events</p>
+                    <p className="text-sm">Füge Events hinzu, die im Kalender angezeigt werden sollen</p>
+                  </div>
+                ) : (
+                  holidaySettings.customEvents.map((event) => (
+                    <div key={event.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: event.color || '#3b82f6' }}
+                        />
+                        <div>
+                          <p className="font-medium text-slate-900">{event.name}</p>
+                          <p className="text-sm text-slate-500">
+                            {new Date(event.date).toLocaleDateString('de-DE', {
+                              weekday: 'long',
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingEvent(event);
+                            setNewEvent({ name: event.name, date: event.date, color: event.color || '#3b82f6' });
+                            setEventDrawerOpen(true);
+                          }}
+                          className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                        >
+                          <Pencil className="h-4 w-4 text-slate-500" />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Event "${event.name}" wirklich löschen?`)) {
+                              await deleteCustomEvent(event.id);
+                              setHolidaySettings({
+                                ...holidaySettings,
+                                customEvents: holidaySettings.customEvents.filter(e => e.id !== event.id)
+                              });
+                            }
+                          }}
+                          className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Event Drawer */}
+            {eventDrawerOpen && (
+              <>
+                <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setEventDrawerOpen(false)} />
+                <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50">
+                  <div className="flex items-center justify-between p-6 border-b border-slate-200">
+                    <h3 className="text-lg font-semibold text-slate-900">
+                      {editingEvent ? 'Event bearbeiten' : 'Neues Event'}
+                    </h3>
+                    <button
+                      onClick={() => setEventDrawerOpen(false)}
+                      className="p-2 hover:bg-slate-100 rounded-lg"
+                    >
+                      <X className="h-5 w-5 text-slate-500" />
+                    </button>
+                  </div>
+
+                  <div className="p-6 space-y-6">
+                    {/* Event Name */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Name
+                      </label>
+                      <input
+                        type="text"
+                        value={newEvent.name || ''}
+                        onChange={(e) => setNewEvent({ ...newEvent, name: e.target.value })}
+                        placeholder="z.B. Betriebsurlaub"
+                        className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    {/* Event Date */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Datum
+                      </label>
+                      <input
+                        type="date"
+                        value={newEvent.date || ''}
+                        onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
+                        className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    {/* Event Color */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Farbe
+                      </label>
+                      <div className="flex gap-3">
+                        {['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'].map((color) => (
+                          <button
+                            key={color}
+                            onClick={() => setNewEvent({ ...newEvent, color })}
+                            className={`w-10 h-10 rounded-full transition-all ${
+                              newEvent.color === color ? 'ring-2 ring-offset-2 ring-slate-400' : ''
+                            }`}
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Save Button */}
+                    <button
+                      onClick={async () => {
+                        if (!newEvent.name || !newEvent.date) {
+                          alert('Bitte Name und Datum eingeben');
+                          return;
+                        }
+
+                        if (editingEvent) {
+                          // Update existing
+                          await updateCustomEvent(editingEvent.id, {
+                            name: newEvent.name,
+                            date: newEvent.date,
+                            color: newEvent.color
+                          });
+                          setHolidaySettings({
+                            ...holidaySettings,
+                            customEvents: holidaySettings.customEvents.map(e =>
+                              e.id === editingEvent.id
+                                ? { ...e, name: newEvent.name!, date: newEvent.date!, color: newEvent.color }
+                                : e
+                            )
+                          });
+                        } else {
+                          // Add new
+                          const eventId = await addCustomEvent({
+                            name: newEvent.name,
+                            date: newEvent.date,
+                            color: newEvent.color
+                          });
+                          if (eventId) {
+                            setHolidaySettings({
+                              ...holidaySettings,
+                              customEvents: [
+                                ...holidaySettings.customEvents,
+                                { id: eventId, name: newEvent.name, date: newEvent.date, color: newEvent.color }
+                              ]
+                            });
+                          }
+                        }
+
+                        setEventDrawerOpen(false);
+                        setEditingEvent(null);
+                        setNewEvent({ name: '', date: '', color: '#3b82f6' });
+                      }}
+                      className="w-full py-3 bg-blue-500 text-white font-medium rounded-xl hover:bg-blue-600 transition-colors"
+                    >
+                      {editingEvent ? 'Speichern' : 'Event hinzufügen'}
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         ) : activeTab === 'ai' ? (
